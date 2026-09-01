@@ -198,9 +198,12 @@ static const char **arena_str_array(CBMArena *arena, yyjson_val *arr, bool null_
     if (!items) {
         return NULL;
     }
-    for (int i = 0; i < count; i++) {
-        const char *s = yyjson_get_str(yyjson_arr_get(arr, (size_t)i));
-        items[i] = s ? cbm_arena_strdup(arena, s) : "?";
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *item = NULL;
+    yyjson_arr_foreach(arr, idx, max, item) {
+        const char *s = yyjson_get_str(item);
+        items[idx] = s ? cbm_arena_strdup(arena, s) : "?";
     }
     if (null_terminated) {
         items[count] = NULL;
@@ -236,9 +239,13 @@ int cbm_lsp_surface_defs_from_json(CBMArena *arena, const char *defs_json, CBMLS
         return -1;
     }
     memset(defs, 0, (size_t)count * sizeof(CBMLSPDef));
-    for (int i = 0; i < count; i++) {
-        yyjson_val *o = yyjson_arr_get(lsp, (size_t)i);
-        CBMLSPDef *d = &defs[i];
+    /* iterate, never index: a yyjson object array is a linked list, so arr_get
+     * is O(idx) and an indexed loop over a large surface is O(n^2) */
+    size_t idx = 0;
+    size_t max = 0;
+    yyjson_val *o = NULL;
+    yyjson_arr_foreach(lsp, idx, max, o) {
+        CBMLSPDef *d = &defs[idx];
         d->qualified_name = arena_str_or_null(arena, yyjson_obj_get(o, "qn"));
         d->short_name = arena_str_or_null(arena, yyjson_obj_get(o, "sn"));
         d->label = arena_str_or_null(arena, yyjson_obj_get(o, "lb"));

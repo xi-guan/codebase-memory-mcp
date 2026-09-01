@@ -1,10 +1,19 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { GraphNode } from "../lib/types";
+import type { Theme } from "../hooks/useTheme";
+import {
+  CANVAS_BACKGROUND,
+  colorForLabel,
+  colorForStatus,
+  themed,
+} from "../lib/colors";
 
 interface NodeLabelsProps {
   nodes: GraphNode[];
   highlightedIds: Set<number> | null;
+  theme: Theme;
+  colorByStatus?: boolean;
   maxLabels?: number;
 }
 
@@ -16,8 +25,8 @@ interface LabelTexture {
 
 const TEXTURE_FONT_SIZE = 64;
 const TEXTURE_FONT =
-  `600 ${TEXTURE_FONT_SIZE}px Inter, system-ui, -apple-system, ` +
-  'BlinkMacSystemFont, "Segoe UI", sans-serif';
+  `600 ${TEXTURE_FONT_SIZE}px 'Helvetica Neue', Helvetica, Inter, ` +
+  "'Segoe UI', system-ui, Arial, sans-serif";
 const TEXTURE_MAX_TEXT_WIDTH = 720;
 const TEXTURE_PADDING_X = 24;
 const TEXTURE_PADDING_Y = 14;
@@ -42,7 +51,11 @@ function fitText(
   return `${text.slice(0, Math.max(1, lo))}...`;
 }
 
-function createLabelTexture(name: string, color: string): LabelTexture | null {
+function createLabelTexture(
+  name: string,
+  color: string,
+  halo: string,
+): LabelTexture | null {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) {
@@ -74,7 +87,8 @@ function createLabelTexture(name: string, color: string): LabelTexture | null {
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
   ctx.lineWidth = TEXTURE_STROKE_WIDTH;
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+  /* The halo is the canvas ground, so a label stays readable over any node. */
+  ctx.strokeStyle = halo;
   ctx.fillStyle = color;
 
   const x = logicalWidth / 2;
@@ -96,10 +110,22 @@ function createLabelTexture(name: string, color: string): LabelTexture | null {
   };
 }
 
-function NodeLabelSprite({ node }: { node: GraphNode }) {
+function NodeLabelSprite({
+  node,
+  theme,
+  colorByStatus,
+}: {
+  node: GraphNode;
+  theme: Theme;
+  colorByStatus: boolean;
+}) {
+  const color = colorByStatus
+    ? colorForStatus(node.status, theme)
+    : colorForLabel(node.label, theme);
+  const halo = themed(CANVAS_BACKGROUND, theme);
   const label = useMemo(
-    () => createLabelTexture(node.name, node.color),
-    [node.name, node.color],
+    () => createLabelTexture(node.name, color, halo),
+    [node.name, color, halo],
   );
 
   useEffect(() => {
@@ -132,6 +158,8 @@ function NodeLabelSprite({ node }: { node: GraphNode }) {
 export function NodeLabels({
   nodes,
   highlightedIds,
+  theme,
+  colorByStatus = false,
   maxLabels = 80,
 }: NodeLabelsProps) {
   const labeled = useMemo(() => {
@@ -150,7 +178,12 @@ export function NodeLabels({
   return (
     <group>
       {labeled.map((node) => (
-        <NodeLabelSprite key={node.id} node={node} />
+        <NodeLabelSprite
+          key={node.id}
+          node={node}
+          theme={theme}
+          colorByStatus={colorByStatus}
+        />
       ))}
     </group>
   );

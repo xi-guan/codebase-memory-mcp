@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import type { GraphNode } from "../lib/types";
 
 /* Upstream tracker for indexing gaps. The URL is served by the backend
@@ -94,29 +95,31 @@ export function MissedCallout({ node, project, onClose }: MissedCalloutProps) {
 
   return (
     <div className="h-full flex flex-col p-4 gap-3 overflow-y-auto">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-[10px] text-foreground/30 uppercase tracking-widest">
+      <div className="flex items-start justify-between gap-2.5">
+        <div className="min-w-0 flex flex-col gap-1">
+          <p className="m-0 font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
             Not fully indexed
           </p>
-          <p className="text-sm font-medium text-foreground/90 break-all mt-1">{path}</p>
-          <p className="text-[10px] text-foreground/40 mt-0.5">{node.label}</p>
+          <p className="m-0 text-[15px] font-bold tracking-[-0.025em] break-all">{path}</p>
+          <p className="m-0 font-mono text-[10px] uppercase tracking-[.06em] text-muted-foreground">
+            {node.label}
+          </p>
         </div>
         <button
           onClick={onClose}
-          className="text-foreground/40 hover:text-foreground/80 text-sm px-1"
+          className="w-6 h-6 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
           aria-label="Close"
         >
-          ×
+          <X size={12} strokeWidth={2.2} />
         </button>
       </div>
 
-      <p className="text-[12px] leading-relaxed text-foreground/70">
+      <p className="text-[12px] leading-[1.5] text-secondary-foreground">
         We did not manage to fully index this part of your code — constructs here may be
         missing from the graph (best-effort detection; the file content itself is ground
         truth).
       </p>
-      <p className="text-[12px] leading-relaxed text-foreground/70">
+      <p className="text-[12px] leading-[1.5] text-secondary-foreground">
         Help us handle this edge case too: let your agent summarize what fails to parse
         here and file a GitHub issue for the codebase-memory-mcp project.
       </p>
@@ -124,10 +127,10 @@ export function MissedCallout({ node, project, onClose }: MissedCalloutProps) {
       <div className="flex flex-col gap-2 mt-1">
         <button
           onClick={copyPrompt}
-          className={`text-[12px] font-medium rounded-md border px-3 py-1.5 transition-all text-left ${
+          className={`h-7 px-2.5 text-left text-[12px] rounded-[7px] border bg-secondary ${
             copied
-              ? "border-primary/60 bg-primary/15 text-primary"
-              : "border-white/10 bg-white/[0.03] text-foreground/80 hover:bg-white/[0.07]"
+              ? "border-primary text-primary"
+              : "border-border text-foreground hover:border-border-strong"
           }`}
         >
           {copied ? "✓ Copied — paste it to your agent" : "Copy agent prompt"}
@@ -137,14 +140,14 @@ export function MissedCallout({ node, project, onClose }: MissedCalloutProps) {
             href={buildIssueUrl(issuesUrl, path, project)}
             target="_blank"
             rel="noreferrer"
-            className="text-[12px] font-medium rounded-md border border-white/10 bg-white/[0.03] text-foreground/80 hover:bg-white/[0.07] px-3 py-1.5 transition-all"
+            className="h-7 px-2.5 flex items-center text-[12px] rounded-[7px] border border-border bg-secondary text-foreground hover:border-border-strong"
           >
             File a GitHub issue (prefilled) ↗
           </a>
         )}
       </div>
 
-      <p className="text-[10px] leading-snug text-foreground/35 mt-1">
+      <p className="text-[11px] leading-[1.5] text-muted-foreground mt-1">
         The prefilled issue contains only the file path and project name — add code
         snippets only if they are shareable.
       </p>

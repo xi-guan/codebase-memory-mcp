@@ -45,18 +45,19 @@ describe("GraphTab filters", () => {
 
     render(<GraphTab project="demo" />);
 
-    /* Wait for the layout to load — the filter panel header appears. */
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    /* Wait for the layout to load AND the filters to initialise — the status
+       pill only counts nodes once every type is enabled. */
+    expect(await screen.findByText("2 nodes")).toBeInTheDocument();
 
     /* Disable every filter via the "None" shortcut. */
     fireEvent.click(screen.getByRole("button", { name: "None" }));
 
     /* The graph area reports that everything is filtered out… */
-    expect(screen.getByText("All nodes filtered out")).toBeInTheDocument();
+    expect(await screen.findByText("All nodes filtered out")).toBeInTheDocument();
 
     /* …but the filter sidebar must stay so the user can re-enable filters
        instead of being forced to reset everything. */
-    expect(screen.getByText("Filters")).toBeInTheDocument();
+    expect(screen.getByText("Node types")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "None" })).toBeInTheDocument();
   });

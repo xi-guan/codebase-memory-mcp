@@ -71,6 +71,10 @@ export interface Project {
   name: string;
   root_path: string;
   indexed_at: string;
+  /* Absent when the project's database is missing or unreadable — the UI then
+   * omits the count rather than showing a placeholder. */
+  nodes?: number;
+  edges?: number;
 }
 
 export interface SchemaInfo {

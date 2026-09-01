@@ -932,22 +932,23 @@ TEST(mcp_tools_have_behavior_annotations) {
         bool open_world;
     } expected[] = {
         {"index_repository", false, false, true, false},
-        /* These query tools can reach resolve_store(), whose corrupt-store
-         * recovery quarantines/removes database files. Keep the annotations
-         * conservative until query resolution is strictly non-mutating. */
-        {"search_graph", false, true, true, false},
-        {"query_graph", false, true, true, false},
-        {"trace_path", false, true, true, false},
-        {"get_code_snippet", false, true, true, false},
-        {"get_graph_schema", false, true, true, false},
+        /* Query tools never mutate the indexed repository. Their resolve_store()
+         * path may rename an already-corrupt cache db aside, which is recovery
+         * on our own cache rather than a caller-visible mutation, so read-only
+         * is the honest hint. Clients gate non-read-only tools behind approval. */
+        {"search_graph", true, false, true, false},
+        {"query_graph", true, false, true, false},
+        {"trace_path", true, false, true, false},
+        {"get_code_snippet", true, false, true, false},
+        {"get_graph_schema", true, false, true, false},
         {"compare_graphs", true, false, true, false},
-        {"get_architecture", false, true, true, false},
-        {"search_code", false, true, true, false},
+        {"get_architecture", true, false, true, false},
+        {"search_code", true, false, true, false},
         {"list_projects", true, false, true, false},
         {"delete_project", false, true, true, false},
-        {"index_status", false, true, true, false},
-        {"check_index_coverage", false, true, true, false},
-        {"detect_changes", false, true, true, false},
+        {"index_status", true, false, true, false},
+        {"check_index_coverage", true, false, true, false},
+        {"detect_changes", true, false, true, false},
         {"manage_adr", false, true, false, false},
         {"ingest_traces", false, false, false, false},
     };

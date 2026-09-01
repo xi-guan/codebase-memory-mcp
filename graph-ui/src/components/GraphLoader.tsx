@@ -1,4 +1,5 @@
 import type { LoadProgress } from "../hooks/useGraphData";
+import { useUiMessages } from "../lib/i18n";
 
 /* Small constellation whose nodes pulse and whose edges draw themselves in a
  * staggered loop — a miniature of the graph being loaded. Pure SVG/CSS
@@ -36,6 +37,7 @@ interface GraphLoaderProps {
 }
 
 export function GraphLoader({ nodeBudget, progress }: GraphLoaderProps) {
+  const t = useUiMessages();
   const receiving = progress.receivedBytes > 0;
   return (
     <div className="text-center" role="status" aria-live="polite">
@@ -68,11 +70,11 @@ export function GraphLoader({ nodeBudget, progress }: GraphLoaderProps) {
           />
         ))}
       </svg>
-      <p className="text-white/50 text-sm mt-4">
-        {receiving ? "Receiving graph" : "Computing layout"} — up to{" "}
-        {nodeBudget.toLocaleString("en-US")} nodes
+      <p className="mt-4 text-[13px] text-muted-foreground">
+        {receiving ? t.graph.receivingGraph : t.graph.computingLayout} —{" "}
+        {t.graph.upToNodes(nodeBudget.toLocaleString("en-US"))}
       </p>
-      <p className="text-cyan-300/60 text-xs font-mono mt-1 h-4">
+      <p className="mt-1 h-4 font-mono text-[11px] text-primary">
         {receiving
           ? progress.totalBytes
             ? `${formatMegabytes(progress.receivedBytes)} of ${formatMegabytes(progress.totalBytes)} MB`

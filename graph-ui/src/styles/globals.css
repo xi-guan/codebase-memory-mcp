@@ -1,29 +1,97 @@
 @import "tailwindcss";
 
+/* `dark:` follows the .dark class on <html>, not the OS preference */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* light is the :root default; .dark overrides. @theme inline below only
+ * references these, so a class flip on <html> reskins everything. */
+:root {
+  --cbm-background: #F1F4F4;
+  --cbm-foreground: #0C1417;
+  --cbm-card: #FFFFFF;
+  --cbm-card-foreground: #0C1417;
+  --cbm-popover: #FFFFFF;
+  --cbm-popover-foreground: #0C1417;
+  --cbm-primary: #1A5FB4;
+  --cbm-primary-foreground: #FFFFFF;
+  --cbm-secondary: #E4EAEA;
+  --cbm-secondary-foreground: #33474B;
+  --cbm-muted: #E9EEEE;
+  --cbm-muted-foreground: #57696D;
+  --cbm-accent: #144A8C;
+  --cbm-accent-foreground: #FFFFFF;
+  --cbm-destructive: #B32424;
+  --cbm-destructive-foreground: #FFFFFF;
+  --cbm-border: #D2DCDD;
+  --cbm-border-strong: #B6C4C6;
+  --cbm-input: #FFFFFF;
+  --cbm-ring: #1A5FB4;
+  --cbm-sidebar: #E9EFEF;
+  --cbm-loader: #1A5FB4;
+  --cbm-faint: #90A2A5;
+  --cbm-ok: #157F5C;
+  --cbm-canvas: #EDF1F2;
+  --cbm-shade: #2b393c4d;
+}
+
+.dark {
+  --cbm-background: #0A1013;
+  --cbm-foreground: #E6EFF0;
+  --cbm-card: #111A1E;
+  --cbm-card-foreground: #E6EFF0;
+  --cbm-popover: #172226;
+  --cbm-popover-foreground: #E6EFF0;
+  --cbm-primary: #E9A63C;
+  --cbm-primary-foreground: #14100A;
+  --cbm-secondary: #162024;
+  --cbm-secondary-foreground: #B4C7CA;
+  --cbm-muted: #162024;
+  --cbm-muted-foreground: #839A9E;
+  --cbm-accent: #F0B75E;
+  --cbm-accent-foreground: #14100A;
+  --cbm-destructive: #F0736B;
+  --cbm-destructive-foreground: #14100A;
+  --cbm-border: #243238;
+  --cbm-border-strong: #35474E;
+  --cbm-input: #0D1518;
+  --cbm-ring: #E9A63C;
+  --cbm-sidebar: #0C1417;
+  --cbm-loader: #E9A63C;
+  --cbm-faint: #4C5F64;
+  --cbm-ok: #57C79A;
+  --cbm-canvas: #06090B;
+  --cbm-shade: #0000005c;
+}
+
 @theme inline {
-  --color-background: #0a161a;
-  --color-foreground: #e0eded;
-  --color-card: #0e2028;
-  --color-card-foreground: #e0eded;
-  --color-popover: #0e2028;
-  --color-popover-foreground: #e0eded;
-  --color-primary: #1DA27E;
-  --color-primary-foreground: #0a161a;
-  --color-secondary: #0f1e24;
-  --color-secondary-foreground: #b0d4d4;
-  --color-muted: #0f1e24;
-  --color-muted-foreground: #6a9e9e;
-  --color-accent: #1C8585;
-  --color-accent-foreground: #e0eded;
-  --color-destructive: #e05252;
-  --color-destructive-foreground: #0a161a;
-  --color-border: #1a3a4030;
-  --color-input: #0c1c2260;
-  --color-ring: #1DA27E;
+  --color-background: var(--cbm-background);
+  --color-foreground: var(--cbm-foreground);
+  --color-card: var(--cbm-card);
+  --color-card-foreground: var(--cbm-card-foreground);
+  --color-popover: var(--cbm-popover);
+  --color-popover-foreground: var(--cbm-popover-foreground);
+  --color-primary: var(--cbm-primary);
+  --color-primary-foreground: var(--cbm-primary-foreground);
+  --color-secondary: var(--cbm-secondary);
+  --color-secondary-foreground: var(--cbm-secondary-foreground);
+  --color-muted: var(--cbm-muted);
+  --color-muted-foreground: var(--cbm-muted-foreground);
+  --color-accent: var(--cbm-accent);
+  --color-accent-foreground: var(--cbm-accent-foreground);
+  --color-destructive: var(--cbm-destructive);
+  --color-destructive-foreground: var(--cbm-destructive-foreground);
+  --color-border: var(--cbm-border);
+  --color-border-strong: var(--cbm-border-strong);
+  --color-input: var(--cbm-input);
+  --color-ring: var(--cbm-ring);
   --radius: 0.75rem;
-  --color-sidebar: #0c1a20;
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-sidebar: var(--cbm-sidebar);
+  --color-faint: var(--cbm-faint);
+  --color-ok: var(--cbm-ok);
+  --color-canvas: var(--cbm-canvas);
+  --color-shade: var(--cbm-shade);
+  --font-sans: 'Helvetica Neue', Helvetica, Inter, 'Segoe UI', system-ui, Arial, sans-serif;
+  --font-mono: Menlo, Monaco, ui-monospace, Consolas, monospace;
 }
 
 html, body, #root {
@@ -32,23 +100,66 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-sans);
+  letter-spacing: -0.006em;
   background: var(--color-background);
   color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--cbm-faint);
+}
+
+input[type="range"] {
+  accent-color: var(--cbm-primary);
+}
+
+::selection {
+  background: var(--cbm-primary);
+  color: var(--cbm-primary-foreground);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--cbm-border-strong);
+  border-radius: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* hover-revealed row actions — the only hover transition in the app */
+.cbm-row:hover .cbm-hov {
+  opacity: 1;
+}
+
+/* ── Status dot ──────────────────────────────────────────────── */
+
+.cbm-pulse {
+  animation: cbm-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes cbm-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 /* ── Graph loading constellation ─────────────────────────────── */
 
 .graph-loader-node {
-  fill: #22d3ee;
+  fill: var(--cbm-loader);
   animation: graph-loader-pulse 2.1s ease-in-out infinite;
   transform-box: fill-box;
   transform-origin: center;
 }
 
 .graph-loader-edge {
-  stroke: #22d3ee;
+  stroke: var(--cbm-loader);
   stroke-opacity: 0.35;
   stroke-width: 1.2;
   stroke-dasharray: 90;
@@ -69,6 +180,7 @@ html, body, #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .cbm-pulse,
   .graph-loader-node,
   .graph-loader-edge {
     animation: none;

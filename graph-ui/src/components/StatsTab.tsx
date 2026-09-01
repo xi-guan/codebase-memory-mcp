@@ -1,14 +1,29 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ArrowUp, ChevronRight, Folder, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useProjects } from "../hooks/useProjects";
-import { colorForLabel } from "../lib/colors";
-import { useUiMessages } from "../lib/i18n";
+import { loadRecentProjects, forgetProject } from "../lib/recent";
+import { useUiMessages, type UiMessages } from "../lib/i18n";
 
 interface StatsTabProps {
   onSelectProject: (project: string) => void;
 }
 
-/* ── Glowy health dot ───────────────────────────────────── */
+/* Big numbers on the summary line read as scale, not as exact counts. */
+const compact = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+function formatAgo(openedAt: number, t: UiMessages): string {
+  const minutes = Math.floor((Date.now() - openedAt) / 60_000);
+  if (minutes < 1) return t.projects.justNow;
+  if (minutes < 60) return t.projects.minutesAgo(minutes);
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t.projects.hoursAgo(hours);
+  return t.projects.daysAgo(Math.floor(hours / 24));
+}
+
+/* ── Health dot ─────────────────────────────────────────── */
 
 function HealthDot({ name }: { name: string }) {
   const t = useUiMessages();
@@ -31,9 +46,9 @@ function HealthDot({ name }: { name: string }) {
   }, [name]);
 
   const dotColor =
-    status === "healthy" ? "#34d399" :
-    status === "missing" ? "#fbbf24" :
-    status === "corrupt" ? "#f87171" : "#555";
+    status === "healthy" ? "var(--cbm-ok)" :
+    status === "missing" ? "var(--cbm-primary)" :
+    status === "corrupt" ? "var(--cbm-destructive)" : "var(--cbm-faint)";
 
   const label =
     status === "healthy" ? t.projects.healthHealthy :
@@ -41,29 +56,18 @@ function HealthDot({ name }: { name: string }) {
     status === "corrupt" ? t.projects.healthCorrupt : t.projects.healthChecking;
 
   return (
-    <div className="group relative inline-flex items-center">
-      {/* Glow layer */}
+    <span className="group relative inline-flex items-center" title={info ? `${label} — ${info}` : label}>
       <span
-        className="absolute w-3 h-3 rounded-full animate-pulse opacity-40 blur-[3px]"
+        className="w-[7px] h-[7px] rounded-full"
         style={{ backgroundColor: dotColor }}
+        aria-label={label}
+        role="img"
       />
-      {/* Dot */}
-      <span
-        className="relative w-[8px] h-[8px] rounded-full"
-        style={{ backgroundColor: dotColor, boxShadow: `0 0 6px ${dotColor}80` }}
-      />
-      {/* Tooltip */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 hidden group-hover:block z-20 pointer-events-none">
-        <div className="bg-[#0b1920] border border-border/50 rounded-lg px-3 py-2 text-[11px] whitespace-nowrap shadow-xl">
-          <p className="font-medium" style={{ color: dotColor }}>{label}</p>
-          {info && <p className="text-foreground/35 text-[10px] mt-0.5">{info}</p>}
-        </div>
-      </div>
-    </div>
+    </span>
   );
 }
 
-/* ── ADR button + modal ─────────────────────────────────── */
+/* ── ADR modal ──────────────────────────────────────────── */
 
 function AdrButton({ project }: { project: string }) {
   const t = useUiMessages();
@@ -104,49 +108,69 @@ function AdrButton({ project }: { project: string }) {
   return (
     <>
       <button
-        onClick={() => { setOpen(true); fetchAdr(); }}
-        className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all ${
-          hasAdr
-            ? "bg-accent/15 text-accent hover:bg-accent/25"
-            : "bg-white/[0.03] text-foreground/25 hover:text-foreground/40 hover:bg-white/[0.06]"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); fetchAdr(); }}
+        className={`h-6 px-2 rounded-[5px] border border-border bg-card font-mono text-[10px] uppercase tracking-[.07em] hover:border-border-strong ${
+          hasAdr ? "text-primary" : "text-muted-foreground hover:text-foreground"
         }`}
       >
-        {hasAdr ? "ADR" : "+ ADR"}
+        {hasAdr ? "ADR" : t.projects.addAdr}
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setOpen(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative bg-[#0e2028] border border-border/40 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-[15px] font-semibold text-foreground/90">{t.adr.title}</h3>
-                <p className="text-[11px] text-foreground/30 font-mono mt-0.5">{project}</p>
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-shade backdrop-blur-[3px]"
+          onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+        >
+          <div
+            className="w-[640px] max-h-[768px] flex flex-col overflow-hidden rounded-xl bg-popover border border-border-strong shadow-[0_32px_72px_#00000070]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 pt-[18px] pb-4 border-b border-border flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-[5px] min-w-0">
+                <h2 className="m-0 text-[16px] font-bold tracking-[-0.028em]">{t.adr.title}</h2>
+                <p className="m-0 font-mono text-[11px] text-muted-foreground truncate">{project}</p>
               </div>
-              <button onClick={() => setOpen(false)} className="text-foreground/20 hover:text-foreground/50 text-[16px] p-1">×</button>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label={t.common.close}
+                className="w-6 h-6 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                <X size={12} strokeWidth={2.2} />
+              </button>
             </div>
-            {updatedAt && (
-              <p className="text-[10px] text-foreground/20 mb-3">{t.adr.lastUpdated}: {updatedAt}</p>
-            )}
-            <textarea
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder={"# Architecture Decision Record\n\n## Context\n...\n\n## Decision\n...\n\n## Consequences\n..."}
-              className="flex-1 min-h-[300px] bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-[12px] text-foreground font-mono placeholder-foreground/15 outline-none focus:border-primary/30 resize-none leading-relaxed"
-            />
-            <div className="flex justify-end gap-2 mt-4">
+            <div className="p-5 flex-1 min-h-0 flex flex-col gap-2">
+              {updatedAt && (
+                <p className="m-0 font-mono text-[10px] uppercase tracking-[.06em] text-muted-foreground">
+                  {t.adr.lastUpdated} {updatedAt}
+                </p>
+              )}
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder={"# Architecture Decision Record\n\n## Context\n...\n\n## Decision\n...\n\n## Consequences\n..."}
+                className="flex-1 min-h-[300px] resize-none rounded-lg bg-input border border-border px-3 py-2.5 font-mono text-[12px] leading-[1.65] text-foreground outline-none focus:border-border-strong"
+              />
+            </div>
+            <div className="px-5 py-3 border-t border-border bg-card flex items-center justify-end gap-2">
               {hasAdr && (
                 <button
-                  onClick={async () => {
-                    setContent(""); await save("");
-                  }}
-                  className="px-3 py-2 rounded-lg text-[12px] text-destructive/60 hover:text-destructive hover:bg-destructive/10 font-medium transition-all"
+                  onClick={async () => { setContent(""); await save(""); }}
+                  className="h-[30px] px-3 rounded-[7px] border border-border text-[12px] text-destructive hover:border-destructive"
                 >
                   {t.common.delete}
                 </button>
               )}
-              <button onClick={() => setOpen(false)} className="px-4 py-2 rounded-lg text-[12px] text-foreground/40 hover:bg-white/[0.04] font-medium transition-all">{t.common.cancel}</button>
-              <button onClick={() => save()} disabled={saving} className="px-4 py-2 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-[12px] font-medium transition-all disabled:opacity-30">
+              <button
+                onClick={() => setOpen(false)}
+                className="h-[30px] px-3.5 rounded-[7px] border border-border text-[12px] text-secondary-foreground hover:border-border-strong hover:text-foreground"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={() => save()}
+                disabled={saving}
+                className="h-[30px] px-3.5 rounded-[7px] bg-primary text-primary-foreground text-[12px] font-semibold hover:bg-accent disabled:opacity-40"
+              >
                 {saving ? t.common.saving : t.common.save}
               </button>
             </div>
@@ -157,7 +181,7 @@ function AdrButton({ project }: { project: string }) {
   );
 }
 
-/* ── Create Index Modal ─────────────────────────────────── */
+/* ── Index modal ────────────────────────────────────────── */
 
 function joinPath(base: string, dir: string): string {
   if (!base || base === "/") return `/${dir}`;
@@ -207,6 +231,13 @@ function CreateIndexModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   useEffect(() => { browse(); }, [browse]);
   useEffect(() => { filterRef.current?.focus(); }, []);
+
+  /* Esc closes the modal, matching the backdrop click. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   /* Windows only: when the user types a drive path into the Repository path
    * field, refresh the folder listing to match (debounced). On Windows, typing
@@ -286,73 +317,90 @@ function CreateIndexModal({ onClose, onCreated }: { onClose: () => void; onCreat
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative bg-[#0e2028] border border-border/40 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden" style={{ height: "min(82vh, 680px)" }} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-5 pt-5 pb-3 shrink-0">
-          <h3 className="text-[15px] font-semibold text-foreground/90 mb-1">{t.index.selectRepositoryFolder}</h3>
-          <p className="text-[12px] text-foreground/30">{t.index.instructions}</p>
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-shade backdrop-blur-[3px]"
+      onClick={onClose}
+    >
+      <div
+        className="w-[640px] max-h-[768px] flex flex-col overflow-hidden rounded-xl bg-popover border border-border-strong shadow-[0_32px_72px_#00000070]"
+        style={{ height: "min(82vh, 768px)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 pt-[18px] pb-4 border-b border-border flex flex-col gap-[5px] shrink-0">
+          <h2 className="m-0 text-[16px] font-bold tracking-[-0.028em]">
+            {t.index.selectRepositoryFolder}
+          </h2>
+          <p className="m-0 text-[12px] leading-[1.5] text-muted-foreground">
+            {t.index.instructions}
+          </p>
         </div>
 
-        <div className="px-5 pb-3 grid grid-cols-[1fr_220px] gap-3 shrink-0">
-          <label className="block">
-            <span className="block text-[10px] uppercase tracking-widest text-foreground/25 mb-1">{t.index.repositoryPath}</span>
+        {/* One baseline grid: label over field, both columns aligned. */}
+        <div className="px-5 py-3.5 grid grid-cols-[1fr_200px] gap-4 border-b border-border shrink-0">
+          <label className="flex flex-col gap-1.5 min-w-0">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+              {t.index.repositoryPath}
+            </span>
             <input
               aria-label={t.index.repositoryPath}
               value={currentPath}
               onChange={(e) => setCurrentPath(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && /^[A-Za-z]:/.test(currentPath.replace(/\\/g, "/"))) { e.preventDefault(); void browse(currentPath); } }}
-              className="w-full bg-white/[0.04] border border-white/[0.06] rounded-lg px-3 py-2 text-[12px] text-foreground font-mono outline-none focus:border-primary/40"
+              className="h-7 bg-transparent border-0 outline-none font-mono text-[13px] font-semibold text-foreground"
             />
           </label>
-          <label className="block">
-            <span className="block text-[10px] uppercase tracking-widest text-foreground/25 mb-1">{t.index.projectName}</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+              {t.index.projectName}
+            </span>
             <input
               aria-label={t.index.projectName}
               value={projectName}
               placeholder={t.index.projectNamePlaceholder}
               onChange={(e) => setProjectName(e.target.value)}
-              className="w-full bg-white/[0.04] border border-white/[0.06] rounded-lg px-3 py-2 text-[12px] text-foreground outline-none focus:border-primary/40 placeholder:text-foreground/20"
+              title={t.index.projectNameHelp}
+              className="h-7 px-[9px] rounded-md bg-input border border-border outline-none focus:border-border-strong font-mono text-[12px] text-foreground"
             />
-            <span className="block text-[10px] text-foreground/25 mt-1">{t.index.projectNameHelp}</span>
           </label>
         </div>
 
-        <div className="px-5 pb-3 flex items-center gap-2 shrink-0">
-          <input
-            ref={filterRef}
-            value={filter}
-            placeholder={t.index.filterFolders}
-            onChange={(e) => setFilter(e.target.value)}
-            onKeyDown={onFilterKeyDown}
-            className="flex-1 bg-white/[0.04] border border-white/[0.06] rounded-lg px-3 py-2 text-[12px] text-foreground outline-none focus:border-primary/40 placeholder:text-foreground/20"
-          />
-          <div className="flex items-center gap-1">
-            {displayRoots.map((root) => (
-              <button
-                key={root}
-                aria-label={t.index.browseRoot(root)}
-                onClick={() => browse(root)}
-                className="px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] text-[11px] text-foreground/45 font-mono transition-all"
-              >
-                {root}
-              </button>
-            ))}
+        <div className="px-5 pt-3 pb-2.5 flex items-center gap-2 shrink-0">
+          <div className="flex-1 flex items-center gap-[7px] h-[30px] px-2.5 bg-input border border-border rounded-[7px] focus-within:border-border-strong">
+            <Search size={12} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+            <input
+              ref={filterRef}
+              value={filter}
+              placeholder={t.index.filterFolders}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={onFilterKeyDown}
+              className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[12px] text-foreground"
+            />
           </div>
+          {/* Drive roots: on Windows this is the only way back to a drive. */}
+          {displayRoots.map((root) => (
+            <button
+              key={root}
+              aria-label={t.index.browseRoot(root)}
+              onClick={() => browse(root)}
+              className="h-[30px] px-2.5 rounded-md border border-border bg-card font-mono text-[11px] text-muted-foreground hover:text-foreground hover:border-border-strong"
+            >
+              {root}
+            </button>
+          ))}
         </div>
 
-        {/* Breadcrumb */}
-        <div className="px-5 py-2 border-y border-border/20 flex items-center gap-0.5 overflow-x-auto text-[11px] shrink-0">
+        {/* Ancestor segments stay clickable — the path field above is editable,
+            so the colouring alone can't carry navigation. */}
+        <div className="px-5 pb-2.5 flex items-center gap-0.5 overflow-x-auto font-mono text-[11px] shrink-0">
           {!isWinPath && (
-            <button onClick={() => browse("/")} className="text-primary/60 hover:text-primary shrink-0 transition-colors">/</button>
+            <button onClick={() => browse("/")} className="shrink-0 text-primary">/</button>
           )}
           {segments.map((seg, i) => (
             <span key={i} className="flex items-center gap-0.5 shrink-0">
-              {(i > 0 || !isWinPath) && <span className="text-foreground/15">/</span>}
+              {(i > 0 || !isWinPath) && <span className="text-faint">/</span>}
               <button
                 onClick={() => browse(crumbPath(i))}
-                className={`transition-colors ${i === segments.length - 1 ? "text-foreground/70 font-medium" : "text-primary/50 hover:text-primary"}`}
+                className={i === segments.length - 1 ? "font-semibold text-foreground" : "text-muted-foreground hover:text-primary"}
               >
                 {seg}
               </button>
@@ -360,61 +408,70 @@ function CreateIndexModal({ onClose, onCreated }: { onClose: () => void; onCreat
           ))}
         </div>
 
-        {/* Directory list */}
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-2 py-1">
-            {/* Go up */}
-            {currentPath !== "/" && (
-              <button
-                onClick={() => browse(parentPath)}
-                className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg hover:bg-white/[0.04] text-[12px] text-foreground/40 transition-colors"
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2">
+          {currentPath !== "/" && (
+            <button
+              onClick={() => browse(parentPath)}
+              aria-label={t.index.goUp}
+              className="flex items-center gap-2.5 w-full h-8 px-2 rounded-md hover:bg-secondary"
+            >
+              <ArrowUp size={13} strokeWidth={2} className="shrink-0 text-muted-foreground" />
+              <span className="font-mono text-[12px] text-muted-foreground">..</span>
+            </button>
+          )}
+          {loading ? (
+            <p className="text-[12px] text-muted-foreground text-center py-8">{t.common.loading}</p>
+          ) : filteredDirs.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground text-center py-8">{t.index.noSubdirectories}</p>
+          ) : (
+            filteredDirs.map((d, i) => (
+              <div
+                key={d}
+                className={`cbm-row flex items-center gap-2.5 h-8 px-2 rounded-md ${
+                  i === activeIndex ? "bg-secondary" : "hover:bg-secondary"
+                }`}
               >
-                <span className="text-foreground/20">↑</span>
-                <span>..</span>
-              </button>
-            )}
-            {loading ? (
-              <p className="text-foreground/20 text-[12px] text-center py-8">{t.common.loading}</p>
-            ) : filteredDirs.length === 0 ? (
-              <p className="text-foreground/15 text-[12px] text-center py-8">{t.index.noSubdirectories}</p>
-            ) : (
-              filteredDirs.map((d, i) => (
-                <div
-                  key={d}
-                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-[12px] transition-colors group ${
-                    i === activeIndex ? "bg-white/[0.05]" : "hover:bg-white/[0.04]"
-                  }`}
+                <Folder size={13} strokeWidth={2} className="shrink-0 text-faint" />
+                <button
+                  aria-label={t.index.browseRoot(d)}
+                  onClick={() => browse(joinPath(currentPath, d))}
+                  className="flex-1 min-w-0 text-left font-mono text-[12px] text-foreground truncate"
                 >
-                  <button
-                    aria-label={t.index.browseRoot(d)}
-                    onClick={() => browse(joinPath(currentPath, d))}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left text-foreground/60"
-                  >
-                    <span className="text-foreground/20 group-hover:text-foreground/40">/</span>
-                    <span className="truncate">{d}</span>
-                  </button>
-                  <button
-                    aria-label={t.index.indexDirectory(d)}
-                    onClick={() => submit(joinPath(currentPath, d))}
-                    disabled={submitting}
-                    className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 px-2 py-1 rounded-md bg-primary/15 hover:bg-primary/25 text-primary text-[10px] font-medium transition-all disabled:opacity-30"
-                  >
-                    {t.index.indexThisFolder}
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </ScrollArea>
+                  {d}
+                </button>
+                <button
+                  aria-label={t.index.indexDirectory(d)}
+                  onClick={() => submit(joinPath(currentPath, d))}
+                  disabled={submitting}
+                  className="cbm-hov opacity-0 transition-opacity duration-[120ms] h-[22px] px-2 inline-flex items-center rounded-[5px] border border-border bg-card font-mono text-[10px] font-semibold uppercase tracking-[.06em] text-primary disabled:opacity-30"
+                >
+                  {t.index.indexChip}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
 
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-border/20 shrink-0">
-          {error && <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 mb-3"><p className="text-destructive text-[11px]">{error}</p></div>}
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] text-foreground/25 font-mono truncate max-w-[250px]">{currentPath}</p>
-            <div className="flex gap-2 shrink-0">
-              <button onClick={onClose} className="px-3 py-2 rounded-lg text-[12px] text-foreground/40 hover:bg-white/[0.04] font-medium transition-all">{t.common.cancel}</button>
-              <button onClick={() => submit()} disabled={submitting || !currentPath} className="px-4 py-2 rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-[12px] font-medium transition-all disabled:opacity-30">
+        <div className="px-5 py-3 border-t border-border bg-card shrink-0">
+          {error && (
+            <p className="mb-2.5 text-[11px] text-destructive">{error}</p>
+          )}
+          <div className="flex items-center justify-between gap-4">
+            <span className="font-mono text-[11px] text-muted-foreground truncate">
+              {t.index.willIndex(currentPath)}
+            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={onClose}
+                className="h-[30px] px-3.5 rounded-[7px] border border-border text-[12px] text-secondary-foreground hover:border-border-strong hover:text-foreground"
+              >
+                {t.common.cancel}
+              </button>
+              <button
+                onClick={() => submit()}
+                disabled={submitting || !currentPath}
+                className="h-[30px] px-3.5 rounded-[7px] bg-primary text-primary-foreground text-[12px] font-semibold hover:bg-accent disabled:opacity-40"
+              >
                 {submitting ? t.index.starting : t.index.indexThisFolder}
               </button>
             </div>
@@ -461,23 +518,22 @@ export function IndexProgress({ onDone }: { onDone: () => void }) {
   if (active.length === 0 && errors.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 mb-6">
+    <div className="rounded-[10px] border border-border bg-card p-4 mb-5">
       {active.map((j) => (
         <div key={j.slot} className="flex items-center gap-3">
-          <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin shrink-0" />
-          <div>
-            <p className="text-[12px] text-primary font-medium">{t.projects.indexingInProgress}</p>
-            <p className="text-[11px] text-foreground/30 font-mono">{j.path}</p>
+          <div className="w-4 h-4 border-2 border-border border-t-primary rounded-full animate-spin shrink-0" />
+          <div className="min-w-0">
+            <p className="m-0 text-[12px] font-semibold text-primary">{t.projects.indexingInProgress}</p>
+            <p className="m-0 font-mono text-[11px] text-muted-foreground truncate">{j.path}</p>
           </div>
         </div>
       ))}
       {errors.map((j) => (
-        <div key={j.slot} className="flex items-start gap-3 mt-3 first:mt-0 p-3 rounded-lg border border-destructive/20 bg-destructive/5 text-destructive">
-          <span className="text-[14px]">⚠️</span>
+        <div key={j.slot} className="flex items-start gap-3 mt-3 first:mt-0 p-3 rounded-lg border border-destructive text-destructive">
           <div className="flex-1 min-w-0">
-            <p className="text-[12px] font-semibold">{t.projects.indexingFailed}</p>
-            <p className="text-[11px] font-mono truncate">{j.path}</p>
-            {j.error && <p className="text-[10px] opacity-75 mt-1 font-mono">{j.error}</p>}
+            <p className="m-0 text-[12px] font-semibold">{t.projects.indexingFailed}</p>
+            <p className="m-0 font-mono text-[11px] truncate">{j.path}</p>
+            {j.error && <p className="m-0 mt-1 font-mono text-[10px] opacity-75">{j.error}</p>}
           </div>
         </div>
       ))}
@@ -485,7 +541,7 @@ export function IndexProgress({ onDone }: { onDone: () => void }) {
         <div className="flex justify-end mt-3">
           <button
             onClick={onDone}
-            className="px-3 py-1 rounded bg-destructive/10 hover:bg-destructive/20 text-destructive text-[11px] font-medium transition-all"
+            className="h-6 px-2.5 rounded-[5px] border border-border text-[11px] text-destructive hover:border-destructive"
           >
             {t.common.dismiss}
           </button>
@@ -495,7 +551,7 @@ export function IndexProgress({ onDone }: { onDone: () => void }) {
   );
 }
 
-/* ── Main Stats Tab ─────────────────────────────────────── */
+/* ── Projects landing ───────────────────────────────────── */
 
 export function StatsTab({ onSelectProject }: StatsTabProps) {
   const t = useUiMessages();
@@ -503,99 +559,212 @@ export function StatsTab({ onSelectProject }: StatsTabProps) {
   const [showModal, setShowModal] = useState(false);
   const [indexing, setIndexing] = useState(false);
 
-  const aggregate = useMemo(() => {
-    let totalNodes = 0, totalEdges = 0;
+  /* Schema totals are frequently unavailable; the clause is then simply
+   * absent from the summary line — never a placeholder. */
+  const totals = useMemo(() => {
+    let nodes = 0, edges = 0, known = false;
     for (const p of projects) {
-      totalNodes += p.schema?.node_labels?.reduce((s, l) => s + l.count, 0) ?? 0;
-      totalEdges += p.schema?.edge_types?.reduce((s, t) => s + t.count, 0) ?? 0;
+      if (p.nodes === undefined && p.edges === undefined) continue;
+      known = true;
+      nodes += p.nodes ?? 0;
+      edges += p.edges ?? 0;
     }
-    return { projects: projects.length, nodes: totalNodes, edges: totalEdges };
+    return known ? { nodes, edges } : null;
   }, [projects]);
+
+  const nodeCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of projects) {
+      if (p.nodes !== undefined) map.set(p.name, p.nodes);
+    }
+    return map;
+  }, [projects]);
+
+  const paths = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of projects) map.set(p.name, p.root_path);
+    return map;
+  }, [projects]);
+
+  /* Recents are local state; a project deleted elsewhere would linger. */
+  const recent = useMemo(
+    () => loadRecentProjects().filter((r) => paths.has(r.name)).slice(0, 3),
+    [paths],
+  );
 
   const deleteProject = useCallback(async (name: string) => {
     if (!confirm(t.projects.deleteConfirm(name))) return;
-    try { await fetch(`/api/project?name=${encodeURIComponent(name)}`, { method: "DELETE" }); refresh(); } catch { /* */ }
+    try {
+      await fetch(`/api/project?name=${encodeURIComponent(name)}`, { method: "DELETE" });
+      forgetProject(name);
+      refresh();
+    } catch { /* */ }
   }, [refresh, t.projects]);
 
   return (
-    <ScrollArea className="h-full">
-      <div className="p-8 max-w-3xl mx-auto">
-        {projects.length > 0 && (
-          <div className="flex gap-4 mb-8">
-            {[
-              { label: t.tabs.projects, value: aggregate.projects, color: "text-primary" },
-              { label: t.projects.nodes, value: aggregate.nodes, color: "text-foreground/80" },
-              { label: t.projects.edges, value: aggregate.edges, color: "text-foreground/80" },
-            ].map((s) => (
-              <div key={s.label} className="flex-1 rounded-xl border border-border/30 bg-white/[0.02] p-4">
-                <p className="text-[10px] text-foreground/25 uppercase tracking-widest mb-1">{s.label}</p>
-                <p className={`text-[22px] font-semibold tabular-nums ${s.color}`}>{s.value.toLocaleString()}</p>
-              </div>
-            ))}
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-[1400px] mx-auto px-10 pt-[30px] pb-11">
+        <div className="flex items-end justify-between gap-6 pb-0.5">
+          <div className="flex flex-col gap-[7px]">
+            <h1 className="m-0 text-[21px] font-bold tracking-[-0.032em]">
+              {t.projects.indexedProjects}
+            </h1>
+            <div className="font-mono text-[11px] tracking-[.02em] text-muted-foreground">
+              {t.projects.repositories(projects.length)}
+              {totals && ` · ${t.projects.totals(compact.format(totals.nodes), compact.format(totals.edges))}`}
+            </div>
           </div>
-        )}
-
-        {indexing && <IndexProgress onDone={() => { setIndexing(false); refresh(); }} />}
-
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-[15px] font-semibold text-foreground/80">{t.projects.indexedProjects}</h2>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowModal(true)} className="px-3 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary text-[12px] font-medium transition-all">+ {t.index.newIndex}</button>
-            <button onClick={refresh} disabled={loading} className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] text-[12px] text-foreground/40 font-medium transition-all disabled:opacity-30">{loading ? "..." : t.common.refresh}</button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-1.5 h-[30px] px-3.5 rounded-[7px] bg-primary text-primary-foreground text-[12px] font-semibold hover:bg-accent"
+            >
+              <Plus size={12} strokeWidth={2.4} />
+              {t.index.newIndex}
+            </button>
+            <button
+              onClick={refresh}
+              disabled={loading}
+              className="flex items-center gap-1.5 h-[30px] px-3 rounded-[7px] border border-border text-[12px] text-secondary-foreground hover:border-border-strong hover:text-foreground disabled:opacity-40"
+            >
+              <RefreshCw size={12} strokeWidth={2} />
+              {t.common.refresh}
+            </button>
           </div>
         </div>
 
-        {error && <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 mb-6"><p className="text-destructive text-[13px]">{error}</p></div>}
-
-        {!loading && projects.length === 0 && !error && (
-          <div className="text-center py-20">
-            <p className="text-foreground/25 text-[13px] mb-2">{t.projects.noIndexedProjects}</p>
-            <button onClick={() => setShowModal(true)} className="px-4 py-2 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary text-[12px] font-medium transition-all">{t.projects.indexFirstRepository}</button>
+        {indexing && (
+          <div className="pt-5">
+            <IndexProgress onDone={() => { setIndexing(false); refresh(); }} />
           </div>
         )}
 
-        <div className="space-y-3">
-          {projects.map((p) => {
-            const totalNodes = p.schema?.node_labels?.reduce((s, l) => s + l.count, 0) ?? 0;
-            const totalEdges = p.schema?.edge_types?.reduce((s, t) => s + t.count, 0) ?? 0;
-            return (
-              <div key={p.project.name} className="rounded-xl border border-border/30 bg-white/[0.02] hover:bg-white/[0.035] transition-all p-5">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="min-w-0 flex items-start gap-2.5">
-                    <div className="mt-1.5"><HealthDot name={p.project.name} /></div>
-                    <div className="min-w-0">
-                      <h3 className="text-[14px] font-semibold text-foreground/90 mb-0.5">{p.project.name}</h3>
-                      <p className="text-[11px] text-foreground/20 font-mono truncate">{p.project.root_path}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <AdrButton project={p.project.name} />
-                    <button onClick={() => onSelectProject(p.project.name)} className="px-3 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary text-[12px] font-medium transition-all">{t.projects.viewGraph}</button>
-                    <button onClick={() => deleteProject(p.project.name)} className="px-2 py-1.5 rounded-lg hover:bg-destructive/10 text-foreground/20 hover:text-destructive text-[12px] transition-all" title={t.projects.deleteTitle}>✕</button>
-                  </div>
-                </div>
-                {p.schema && (
-                  <>
-                    <div className="flex gap-6 text-[12px] text-foreground/30 mb-3">
-                      <span><strong className="text-foreground/55 tabular-nums">{totalNodes.toLocaleString()}</strong> {t.projects.nodes}</span>
-                      <span><strong className="text-foreground/55 tabular-nums">{totalEdges.toLocaleString()}</strong> {t.projects.edges}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {p.schema.node_labels?.map((l) => (
-                        <span key={l.label} className="inline-flex items-center gap-1 px-1.5 py-[2px] rounded-md text-[10px] font-medium" style={{ backgroundColor: colorForLabel(l.label) + "10", color: colorForLabel(l.label) + "bb" }}>
-                          <span className="w-[4px] h-[4px] rounded-full" style={{ backgroundColor: colorForLabel(l.label) }} />
-                          {l.label} {l.count.toLocaleString()}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                )}
+        {error && (
+          <div className="mt-5 rounded-[10px] border border-destructive p-4">
+            <p className="m-0 text-[13px] text-destructive">{error}</p>
+          </div>
+        )}
+
+        {!loading && projects.length === 0 && !error ? (
+          <div className="text-center py-20 flex flex-col items-center gap-3">
+            <p className="m-0 text-[13px] text-muted-foreground">{t.projects.noIndexedProjects}</p>
+            <button
+              onClick={() => setShowModal(true)}
+              className="h-[30px] px-3.5 rounded-[7px] bg-primary text-primary-foreground text-[12px] font-semibold hover:bg-accent"
+            >
+              {t.projects.indexFirstRepository}
+            </button>
+          </div>
+        ) : (
+          /* minmax(0,1fr), not 1fr: a very long path has a large min-content
+             contribution that would otherwise widen the track. */
+          <div className="grid grid-cols-[minmax(0,1fr)_336px] gap-10 items-start pt-5">
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-baseline justify-between pr-2 pb-[9px] border-b border-border">
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+                  {t.projects.allProjects}
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-[.05em] text-muted-foreground">
+                  {projects.length}
+                </span>
               </div>
-            );
-          })}
-        </div>
+
+              {projects.map((p) => {
+                const name = p.name;
+                const nodes = nodeCounts.get(name);
+                return (
+                  <div
+                    key={name}
+                    onClick={() => onSelectProject(name)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter") onSelectProject(name); }}
+                    className="cbm-row flex items-center gap-3 h-[38px] pr-2 border-b border-border cursor-pointer hover:bg-card"
+                  >
+                    <div className="w-6 shrink-0 flex justify-center">
+                      <HealthDot name={name} />
+                    </div>
+                    <span className="shrink-0 text-[14px] tracking-[-0.015em] whitespace-nowrap">
+                      {name}
+                    </span>
+                    <span className="flex-1 min-w-0 font-mono text-[11px] text-muted-foreground truncate">
+                      {p.root_path}
+                    </span>
+                    {nodes !== undefined && (
+                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.05em] text-muted-foreground whitespace-nowrap">
+                        {t.projects.nodeCount(nodes.toLocaleString())}
+                      </span>
+                    )}
+                    <div className="cbm-hov flex items-center gap-1 shrink-0 opacity-0 transition-opacity duration-[120ms]">
+                      <AdrButton project={name} />
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteProject(name); }}
+                        title={t.projects.deleteTitle}
+                        aria-label={t.projects.deleteTitle}
+                        className="w-6 h-6 flex items-center justify-center rounded-[5px] border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive"
+                      >
+                        <X size={11} strokeWidth={2.2} />
+                      </button>
+                    </div>
+                    <span className="flex items-center justify-end gap-1.5 w-[84px] shrink-0 text-[11px] font-semibold text-primary">
+                      {t.projects.viewGraph}
+                      <ChevronRight size={12} strokeWidth={2.2} />
+                    </span>
+                  </div>
+                );
+              })}
+
+              <div className="pt-3 font-mono text-[10px] uppercase tracking-[.08em] text-muted-foreground">
+                {t.projects.rowFootnote}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-[11px] min-w-0">
+              <div className="pb-[9px] border-b border-border">
+                <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+                  {t.projects.recentlyOpened}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {recent.map((r) => {
+                  const nodes = nodeCounts.get(r.name);
+                  return (
+                    <div
+                      key={r.name}
+                      onClick={() => onSelectProject(r.name)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === "Enter") onSelectProject(r.name); }}
+                      className="flex flex-col gap-[9px] px-4 pt-3.5 pb-[15px] min-w-0 rounded-[10px] bg-card border border-border hover:border-primary cursor-pointer"
+                    >
+                      <div className="flex items-center gap-[9px] min-w-0">
+                        <span className="w-[7px] h-[7px] shrink-0 rounded-full bg-ok" />
+                        <span className="flex-1 min-w-0 text-[14px] tracking-[-0.015em] truncate">
+                          {r.name}
+                        </span>
+                        <ChevronRight size={13} strokeWidth={2.2} className="shrink-0 text-primary" />
+                      </div>
+                      <span className="font-mono text-[11px] text-muted-foreground truncate">
+                        {paths.get(r.name)}
+                      </span>
+                      <div className="flex items-center gap-[9px] pt-0.5 font-mono text-[10px] uppercase tracking-[.05em] text-muted-foreground whitespace-nowrap">
+                        {nodes !== undefined && (
+                          <>
+                            <span>{t.projects.nodeCount(nodes.toLocaleString())}</span>
+                            <span className="text-border-strong">|</span>
+                          </>
+                        )}
+                        <span>{formatAgo(r.openedAt, t)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {showModal && <CreateIndexModal onClose={() => setShowModal(false)} onCreated={() => { setIndexing(true); refresh(); }} />}
-    </ScrollArea>
+    </div>
   );
 }

@@ -11,6 +11,7 @@
 #include "foundation/mem.h" // cbm_mem_init/budget (back-pressure futile-nap test)
 #include "pipeline/pipeline.h"
 #include "pipeline/pipeline_internal.h"
+#include "pipeline/lsp_surface.h"
 #include "pipeline/artifact.h"
 #include "store/store.h"
 #include "git/git_context.h"
@@ -12997,8 +12998,47 @@ TEST(pipeline_markdown_and_config_prose_reaches_fts_body) {
     PASS();
 }
 
+/* yyjson stores an object array as a linked list, so indexed access is O(idx)
+ * and an indexed decode loop is O(n^2). Rehydrate decodes one row per file on
+ * every incremental run: a 265k-def row spun a single core for the full 15-min
+ * quiet timeout in the field. The budget here is ~50x the linear cost. */
+TEST(pipeline_lsp_surface_decode_is_linear_in_def_count) {
+    enum { DEFS = 100000, BUDGET_MS = 5000, PER_DEF_CAP = 64 };
+    size_t cap = (size_t)DEFS * PER_DEF_CAP + 64;
+    char *json = (char *)malloc(cap);
+    ASSERT_NOT_NULL(json);
+    size_t len = (size_t)snprintf(json, cap, "{\"v\":1,\"lsp\":[");
+    for (int i = 0; i < DEFS; i++) {
+        len += (size_t)snprintf(json + len, cap - len,
+                                "%s{\"qn\":\"q%d\",\"sn\":\"s%d\",\"lb\":\"Function\"}",
+                                i ? "," : "", i, i);
+    }
+    len += (size_t)snprintf(json + len, cap - len, "]}");
+    ASSERT_TRUE(len < cap);
+
+    CBMArena arena;
+    cbm_arena_init(&arena);
+    CBMLSPDef *defs = NULL;
+    clock_t started = clock();
+    int count = cbm_lsp_surface_defs_from_json(&arena, json, &defs);
+    double elapsed_ms = 1000.0 * (double)(clock() - started) / (double)CLOCKS_PER_SEC;
+
+    ASSERT_EQ(count, DEFS);
+    ASSERT_NOT_NULL(defs);
+    /* order must survive the rewrite: registration consumes this array positionally */
+    ASSERT_STR_EQ(defs[0].qualified_name, "q0");
+    ASSERT_STR_EQ(defs[DEFS - 1].qualified_name, "q99999");
+    ASSERT_STR_EQ(defs[DEFS - 1].short_name, "s99999");
+    ASSERT_TRUE(elapsed_ms < BUDGET_MS);
+
+    cbm_arena_destroy(&arena);
+    free(json);
+    PASS();
+}
+
 SUITE(pipeline) {
     RUN_TEST(pipeline_lsp_surface_persisted_and_body_edit_invariant);
+    RUN_TEST(pipeline_lsp_surface_decode_is_linear_in_def_count);
     /* Index lock */
     RUN_TEST(pipeline_lock_try_acquire);
     RUN_TEST(pipeline_lock_blocking);

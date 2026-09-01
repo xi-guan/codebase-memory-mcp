@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Info, RefreshCw, SlidersHorizontal, X } from "lucide-react";
 import {
   useGraphData,
   clampNodeBudget,
@@ -8,7 +8,7 @@ import {
   GRAPH_NODE_BUDGET_MAX,
 } from "../hooks/useGraphData";
 import { GraphLoader } from "./GraphLoader";
-import { DisplaySettingsMenu } from "./DisplaySettingsMenu";
+import { DisplaySettingsPanel, isDefaultDisplay } from "./DisplaySettingsMenu";
 import {
   loadDisplaySettings,
   saveDisplaySettings,
@@ -25,19 +25,24 @@ import { NodeDetailPanel } from "./NodeDetailPanel";
 import { MissedCallout } from "./MissedCallout";
 import { ResizeHandle } from "./ResizeHandle";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { useUiMessages } from "../lib/i18n";
 import type { GraphNode, GraphData, RepoInfo } from "../lib/types";
-import { colorForStatus } from "../lib/colors";
 
-/* Persist panel widths */
-function loadWidth(key: string, fallback: number): number {
+/* Panel widths (px): default, then the drag range. */
+const SIDEBAR_WIDTH = { key: "cbm-left-w", initial: 264, min: 220, max: 400 };
+const PANEL_WIDTH = { key: "cbm-right-w", initial: 368, min: 300, max: 520 };
+
+type PanelSpec = typeof SIDEBAR_WIDTH;
+
+function loadWidth(spec: PanelSpec): number {
   try {
-    const v = localStorage.getItem(key);
-    if (v) return Math.max(150, Math.min(600, parseInt(v, 10)));
+    const v = localStorage.getItem(spec.key);
+    if (v) return Math.max(spec.min, Math.min(spec.max, parseInt(v, 10)));
   } catch { /* ignore */ }
-  return fallback;
+  return spec.initial;
 }
-function saveWidth(key: string, value: number) {
-  try { localStorage.setItem(key, String(Math.round(value))); } catch { /* ignore */ }
+function saveWidth(spec: PanelSpec, value: number) {
+  try { localStorage.setItem(spec.key, String(Math.round(value))); } catch { /* ignore */ }
 }
 
 /* Persist the node budget per project */
@@ -59,12 +64,20 @@ interface GraphTabProps {
   project: string | null;
 }
 
-export function formatGraphLimitNotice(data: GraphData | null): string | null {
+/* How much of the graph the budget let through. null when all of it did — the
+ * over-budget state is normal for any large repo, not a warning. */
+export function graphBudgetNotice(
+  data: GraphData | null,
+): { shown: string; total: string } | null {
   if (!data || data.total_nodes <= data.nodes.length) return null;
-  return `Showing ${data.nodes.length.toLocaleString("en-US")} of ${data.total_nodes.toLocaleString("en-US")} nodes (${data.edges.length.toLocaleString("en-US")} edges). Raise the node budget or use filters.`;
+  return {
+    shown: data.nodes.length.toLocaleString("en-US"),
+    total: data.total_nodes.toLocaleString("en-US"),
+  };
 }
 
 export function GraphTab({ project }: GraphTabProps) {
+  const t = useUiMessages();
   const { data, loading, error, progress, fetchOverview } = useGraphData();
   const [highlightedIds, setHighlightedIds] = useState<Set<number> | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -72,6 +85,8 @@ export function GraphTab({ project }: GraphTabProps) {
   const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [showLabels, setShowLabels] = useState(true);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const displayRef = useRef<HTMLDivElement>(null);
   const [display, setDisplay] = useState<DisplaySettings>(() =>
     loadDisplaySettings(),
   );
@@ -79,9 +94,9 @@ export function GraphTab({ project }: GraphTabProps) {
     setDisplay(next);
     saveDisplaySettings(next);
   }, []);
-  const [leftWidth, setLeftWidth] = useState(() => loadWidth("cbm-left-w", 260));
-  const [rightWidth, setRightWidth] = useState(() => loadWidth("cbm-right-w", 280));
-  const limitNotice = formatGraphLimitNotice(data);
+  const [leftWidth, setLeftWidth] = useState(() => loadWidth(SIDEBAR_WIDTH));
+  const [rightWidth, setRightWidth] = useState(() => loadWidth(PANEL_WIDTH));
+  const budgetNotice = graphBudgetNotice(data);
 
   /* Node budget — keyed to its project so switching projects re-reads the
    * persisted value and triggers exactly one fetch. */
@@ -90,21 +105,28 @@ export function GraphTab({ project }: GraphTabProps) {
   );
   const [budgetDraft, setBudgetDraft] = useState(String(GRAPH_RENDER_NODE_LIMIT));
 
+  const applyBudget = useCallback(
+    (value: number) => {
+      const parsed = clampNodeBudget(value);
+      setBudgetDraft(String(parsed));
+      if (project && parsed !== budget.value) {
+        saveNodeBudget(project, parsed);
+        setBudget({ project, value: parsed });
+      }
+    },
+    [project, budget.value],
+  );
+
   const commitBudget = useCallback(() => {
-    const parsed = clampNodeBudget(parseInt(budgetDraft, 10));
-    setBudgetDraft(String(parsed));
-    if (project && parsed !== budget.value) {
-      saveNodeBudget(project, parsed);
-      setBudget({ project, value: parsed });
-    }
-  }, [budgetDraft, project, budget.value]);
+    applyBudget(parseInt(budgetDraft, 10));
+  }, [applyBudget, budgetDraft]);
 
   /* Filter state — all enabled by default */
   const [enabledLabels, setEnabledLabels] = useState<Set<string>>(new Set());
   const [enabledEdgeTypes, setEnabledEdgeTypes] = useState<Set<string>>(new Set());
 
   /* Missed skeleton (#963): the file structure of files the indexer could
-   * not fully cover, shown as a white satellite cluster beside the code
+   * not fully cover, shown as a hollow satellite cluster beside the code
    * galaxy. Toggle only hides/shows it — the data rides along with every
    * code-graph layout. */
   const [showMissedSkeleton, setShowMissedSkeleton] = useState(true);
@@ -129,6 +151,36 @@ export function GraphTab({ project }: GraphTabProps) {
     setEnabledEdgeTypes(types);
   }, [data]);
 
+  const clearSelection = useCallback(() => {
+    setHighlightedIds(null);
+    setSelectedPath(null);
+    setSelectedNode(null);
+    setCameraTarget(null);
+  }, []);
+
+  /* Esc clears the selection and closes the Display popover. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setDisplayOpen(false);
+      clearSelection();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [clearSelection]);
+
+  /* Close the Display popover on an outside click. */
+  useEffect(() => {
+    if (!displayOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (displayRef.current && !displayRef.current.contains(e.target as Node)) {
+        setDisplayOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [displayOpen]);
+
   /* Compute filtered data */
   const filteredData: GraphData | null = useMemo(() => {
     if (!data) return null;
@@ -140,12 +192,9 @@ export function GraphTab({ project }: GraphTabProps) {
       if (hideTests && n.status === "test") return false;
       return true;
     };
-    /* Recolor by status when the dead-code view is on */
-    const paint = (n: GraphNode): GraphNode =>
-      deadCodeView ? { ...n, color: colorForStatus(n.status) } : n;
     const keep = (n: GraphNode) => enabledLabels.has(n.label) && statusOk(n);
 
-    const nodes = data.nodes.filter(keep).map(paint);
+    const nodes = data.nodes.filter(keep);
     const nodeIds = new Set(nodes.map((n) => n.id));
     const edges = data.edges.filter(
       (e) =>
@@ -155,7 +204,7 @@ export function GraphTab({ project }: GraphTabProps) {
     );
 
     const linked_projects = data.linked_projects?.map((lp) => {
-      const lpNodes = lp.nodes.filter(keep).map(paint);
+      const lpNodes = lp.nodes.filter(keep);
       const lpIds = new Set(lpNodes.map((n) => n.id));
       const lpEdges = lp.edges.filter(
         (e) =>
@@ -173,7 +222,6 @@ export function GraphTab({ project }: GraphTabProps) {
     data,
     enabledLabels,
     enabledEdgeTypes,
-    deadCodeView,
     showOnlyDead,
     hideEntryPoints,
     hideTests,
@@ -197,8 +245,9 @@ export function GraphTab({ project }: GraphTabProps) {
     }
   }, [project, budget, fetchOverview]);
 
-  /* Missed skeleton: offset into place and paint white — a ghost of the
-   * files the graph could not fully cover, sitting beside the galaxy. */
+  /* Missed skeleton: offset into place — a ghost of the files the graph could
+   * not fully cover, sitting beside the galaxy. It is drawn hollow, so the
+   * renderer paints the ring itself. */
   const missedSkeleton = useMemo(() => {
     const mg = data?.missed_graph;
     if (!mg || mg.nodes.length === 0) return null;
@@ -207,7 +256,6 @@ export function GraphTab({ project }: GraphTabProps) {
       x: n.x + mg.offset.x,
       y: n.y + mg.offset.y,
       z: n.z + mg.offset.z,
-      color: "#e9eef5",
     }));
     return { nodes, edges: mg.edges, ids: new Set(nodes.map((n) => n.id)) };
   }, [data]);
@@ -354,12 +402,16 @@ export function GraphTab({ project }: GraphTabProps) {
     setEnabledEdgeTypes(new Set());
   }, []);
 
+  const refresh = useCallback(() => {
+    if (!project) return;
+    clearSelection();
+    fetchOverview(project, budget.value);
+  }, [project, budget.value, clearSelection, fetchOverview]);
+
   if (!project) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-white/30 text-sm">
-          Select a project from the Projects tab
-        </p>
+        <p className="text-[13px] text-muted-foreground">{t.graph.selectProject}</p>
       </div>
     );
   }
@@ -375,11 +427,14 @@ export function GraphTab({ project }: GraphTabProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <p className="text-red-400 text-sm mb-2">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => fetchOverview(project)}>
-            Retry
-          </Button>
+        <div className="text-center p-8 flex flex-col items-center gap-3">
+          <p className="text-[13px] text-destructive">{error}</p>
+          <button
+            onClick={() => fetchOverview(project)}
+            className="h-[30px] px-3 rounded-[7px] border border-border hover:border-border-strong text-[12px] text-secondary-foreground hover:text-foreground"
+          >
+            {t.graph.retry}
+          </button>
         </div>
       </div>
     );
@@ -391,16 +446,18 @@ export function GraphTab({ project }: GraphTabProps) {
   if (!data || !filteredData || data.nodes.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-white/30 text-sm">No nodes in this project</p>
+        <p className="text-[13px] text-muted-foreground">{t.graph.noNodes}</p>
       </div>
     );
   }
 
+  const selectionCount = highlightedIds?.size ?? 0;
+
   return (
     <div className="h-full flex">
-      {/* Left sidebar — resizable */}
+      {/* Left sidebar — resizable, one scroll for every section */}
       <div
-        className="border-r border-border/30 flex flex-col h-full bg-[#0b1920]/90 backdrop-blur-md shrink-0"
+        className="shrink-0 h-full flex flex-col overflow-y-auto bg-sidebar border-r border-border"
         style={{ width: leftWidth }}
       >
         <FilterPanel
@@ -435,22 +492,25 @@ export function GraphTab({ project }: GraphTabProps) {
         side="left"
         onResize={(d) => {
           setLeftWidth((w) => {
-            const nw = Math.max(150, Math.min(500, w + d));
-            saveWidth("cbm-left-w", nw);
+            const nw = Math.max(SIDEBAR_WIDTH.min, Math.min(SIDEBAR_WIDTH.max, w + d));
+            saveWidth(SIDEBAR_WIDTH, nw);
             return nw;
           });
         }}
       />
 
-      {/* Graph area */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* Canvas + its three overlay anchors */}
+      <div className="flex-1 min-w-0 relative overflow-hidden bg-canvas">
         {filteredData.nodes.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <p className="text-white/30 text-sm mb-3">All nodes filtered out</p>
-              <Button size="sm" onClick={enableAll}>
-                Reset Filters
-              </Button>
+            <div className="text-center flex flex-col items-center gap-3">
+              <p className="text-[13px] text-muted-foreground">{t.graph.allFilteredOut}</p>
+              <button
+                onClick={enableAll}
+                className="h-[30px] px-3.5 rounded-[7px] bg-primary text-primary-foreground text-[12px] font-semibold"
+              >
+                {t.graph.resetFilters}
+              </button>
             </div>
           </div>
         ) : (
@@ -460,90 +520,124 @@ export function GraphTab({ project }: GraphTabProps) {
                 data={filteredData}
                 missed={showMissedSkeleton ? missedSkeleton : null}
                 highlightedIds={highlightedIds}
+                focusId={selectedNode?.id ?? null}
                 cameraTarget={cameraTarget}
                 showLabels={showLabels}
+                colorByStatus={deadCodeView}
                 display={display}
                 onNodeClick={handleNodeClick}
                 onBackgroundClick={handleBackgroundClick}
               />
             </ErrorBoundary>
 
-            {/* HUD */}
-            <div className="absolute top-4 left-4 text-[11px] text-white/30 pointer-events-none font-mono">
-              <p>
-                {filteredData.nodes.length.toLocaleString()} nodes /{" "}
-                {filteredData.edges.length.toLocaleString()} edges
-              </p>
-              {data.nodes.length > filteredData.nodes.length && (
-                <p className="text-white/25 mt-0.5">
-                  filtered from {data.nodes.length.toLocaleString()}
-                </p>
+            {/* Anchor A — status. Read-only, never moves. */}
+            <div className="absolute top-3 left-3 z-20 flex flex-col items-start gap-2 pointer-events-none">
+              <div className="flex items-center gap-[9px] h-[26px] px-[11px] w-max shrink-0 whitespace-nowrap rounded-[7px] bg-card border border-border font-mono text-[11px] tracking-[.02em] text-foreground">
+                <span>{t.graph.nodesCount(filteredData.nodes.length.toLocaleString())}</span>
+                <span className="text-faint">/</span>
+                <span>{t.graph.edgesCount(filteredData.edges.length.toLocaleString())}</span>
+              </div>
+
+              {budgetNotice && (
+                <div className="flex items-center gap-2 h-[26px] px-[11px] w-max shrink-0 whitespace-nowrap rounded-[7px] bg-card border border-border font-mono text-[11px] text-muted-foreground pointer-events-auto">
+                  <Info size={11} strokeWidth={2} className="shrink-0" />
+                  <span>{t.graph.showingOf(budgetNotice.shown, budgetNotice.total)}</span>
+                  <button
+                    onClick={() => applyBudget(budget.value + GRAPH_NODE_BUDGET_STEP)}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    {t.graph.raiseBudget}
+                  </button>
+                </div>
               )}
-              {limitNotice && (
-                <p className="text-amber-300/80 mt-0.5">{limitNotice}</p>
-              )}
-              {highlightedIds && highlightedIds.size > 0 && (
-                <p className="text-cyan-400/50 mt-0.5">
-                  {highlightedIds.size} selected
-                </p>
+
+              {selectionCount > 0 && (
+                <div className="flex items-center gap-2 h-[26px] px-[11px] w-max shrink-0 whitespace-nowrap rounded-[7px] bg-primary border border-primary font-mono text-[11px] font-semibold text-primary-foreground">
+                  {t.graph.selection(selectionCount, selectionCount - 1)}
+                </div>
               )}
             </div>
 
-            <div className="absolute top-4 right-4 flex gap-2 items-center">
-              {highlightedIds && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setHighlightedIds(null);
-                    setSelectedPath(null);
-                    setSelectedNode(null);
-                    setCameraTarget(null);
-                  }}
-                >
-                  Clear selection
-                </Button>
-              )}
-              <div className="flex items-center gap-1.5 h-8 px-2 rounded-md border border-border/50 bg-[#0b1920]/80 backdrop-blur-sm">
-                <label
-                  htmlFor="node-budget"
-                  className="text-[10px] uppercase tracking-wider text-white/40"
-                >
-                  Nodes
+            {/* Anchor B — controls. Right-aligned, pushes nothing. */}
+            <div
+              ref={displayRef}
+              className="absolute top-3 right-3 z-30 flex flex-col items-end gap-2"
+            >
+              <div className="flex items-stretch h-7 rounded-lg overflow-hidden bg-card border border-border">
+                <label className="flex items-center gap-2 pl-2.5 pr-[9px] cursor-text">
+                  <span className="font-mono text-[10px] uppercase tracking-[.09em] text-muted-foreground">
+                    {t.graph.budgetLabel}
+                  </span>
+                  <input
+                    type="number"
+                    min={GRAPH_NODE_BUDGET_STEP}
+                    max={GRAPH_NODE_BUDGET_MAX}
+                    step={GRAPH_NODE_BUDGET_STEP}
+                    value={budgetDraft}
+                    onChange={(e) => setBudgetDraft(e.target.value)}
+                    onBlur={commitBudget}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
+                    className="w-11 bg-transparent text-right font-mono text-[12px] text-foreground outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    aria-label={t.graph.budgetHelp}
+                    title={t.graph.budgetHelp}
+                  />
                 </label>
-                <input
-                  id="node-budget"
-                  type="number"
-                  min={GRAPH_NODE_BUDGET_STEP}
-                  max={GRAPH_NODE_BUDGET_MAX}
-                  step={GRAPH_NODE_BUDGET_STEP}
-                  value={budgetDraft}
-                  onChange={(e) => setBudgetDraft(e.target.value)}
-                  onBlur={commitBudget}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.currentTarget.blur();
-                    }
-                  }}
-                  className="w-24 bg-transparent text-right text-xs font-mono text-cyan-200/90 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  aria-label="Node budget: how many nodes to load"
-                  title="How many nodes to load (5,000 steps, edges between loaded nodes follow automatically)"
-                />
+                <span className="w-px bg-border" />
+                <button
+                  onClick={() => setDisplayOpen((v) => !v)}
+                  aria-expanded={displayOpen}
+                  aria-haspopup="dialog"
+                  className={`flex items-center gap-1.5 px-[11px] text-[12px] ${
+                    displayOpen
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "text-secondary-foreground hover:bg-secondary hover:text-foreground"
+                  }`}
+                >
+                  <SlidersHorizontal size={12} strokeWidth={2} />
+                  {t.graph.display}
+                  {!isDefaultDisplay(display) && !displayOpen && (
+                    <span className="w-1 h-1 rounded-full bg-primary" />
+                  )}
+                </button>
+                <span className="w-px bg-border" />
+                <button
+                  onClick={refresh}
+                  className="flex items-center gap-1.5 px-[11px] text-[12px] text-secondary-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <RefreshCw size={12} strokeWidth={2} />
+                  {t.common.refresh}
+                </button>
               </div>
-              <DisplaySettingsMenu settings={display} onChange={updateDisplay} />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setHighlightedIds(null);
-                  setSelectedPath(null);
-                  setSelectedNode(null);
-                  setCameraTarget(null);
-                  fetchOverview(project, budget.value);
-                }}
-              >
-                Refresh
-              </Button>
+
+              {displayOpen && (
+                <DisplaySettingsPanel settings={display} onChange={updateDisplay} />
+              )}
             </div>
+
+            {/* Anchor C — exactly one transient action, centred in the canvas
+                box so it re-centres when the detail panel opens. */}
+            {selectionCount > 0 ? (
+              <div className="absolute bottom-3.5 left-0 right-0 z-[25] flex justify-center">
+                <button
+                  onClick={clearSelection}
+                  className="flex items-center gap-[7px] h-[30px] px-3.5 rounded-lg bg-popover border border-border-strong text-[12px] font-semibold text-foreground hover:border-primary hover:text-primary shadow-[0_10px_28px_var(--cbm-shade)]"
+                >
+                  <X size={12} strokeWidth={2.2} />
+                  {t.graph.clearSelection}
+                  <span className="font-mono text-[10px] font-normal tracking-[.06em] text-muted-foreground">
+                    {t.graph.escHint}
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="absolute bottom-3.5 left-0 right-0 z-[15] flex justify-center pointer-events-none">
+                <span className="font-mono text-[11px] tracking-[.04em] text-muted-foreground">
+                  {t.graph.canvasHint}
+                </span>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -555,14 +649,14 @@ export function GraphTab({ project }: GraphTabProps) {
             side="right"
             onResize={(d) => {
               setRightWidth((w) => {
-                const nw = Math.max(200, Math.min(500, w + d));
-                saveWidth("cbm-right-w", nw);
+                const nw = Math.max(PANEL_WIDTH.min, Math.min(PANEL_WIDTH.max, w + d));
+                saveWidth(PANEL_WIDTH, nw);
                 return nw;
               });
             }}
           />
           <div
-            className="border-l border-border shrink-0 h-full overflow-hidden"
+            className="shrink-0 h-full overflow-y-auto bg-card border-l border-border"
             style={{ width: rightWidth, maxHeight: "100%" }}
           >
             {missedSkeleton?.ids.has(selectedNode.id) ? (
@@ -572,11 +666,7 @@ export function GraphTab({ project }: GraphTabProps) {
               <MissedCallout
                 node={selectedNode}
                 project={project}
-                onClose={() => {
-                  setSelectedNode(null);
-                  setHighlightedIds(null);
-                  setSelectedPath(null);
-                }}
+                onClose={clearSelection}
               />
             ) : (
               <NodeDetailPanel
@@ -585,11 +675,7 @@ export function GraphTab({ project }: GraphTabProps) {
                 allEdges={filteredData.edges}
                 project={project}
                 repoInfo={repoInfo}
-                onClose={() => {
-                  setSelectedNode(null);
-                  setHighlightedIds(null);
-                  setSelectedPath(null);
-                }}
+                onClose={clearSelection}
                 onNavigate={handleNavigateToNode}
               />
             )}

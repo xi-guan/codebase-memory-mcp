@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { X } from "lucide-react";
 import { colorForLabel } from "../lib/colors";
+import { useTheme } from "../hooks/useTheme";
+import { useUiMessages, type UiMessages } from "../lib/i18n";
 import { callTool } from "../api/rpc";
 import type { GraphNode, GraphEdge, RepoInfo } from "../lib/types";
 
@@ -26,6 +28,9 @@ interface SnippetResult {
   end_line?: number;
 }
 
+/* Rows past this collapse behind a "+ N more references" button. */
+const VISIBLE_REFERENCES = 25;
+
 function lineSuffix(node: GraphNode): string {
   if (!node.start_line) return "";
   const end = node.end_line && node.end_line !== node.start_line ? `-L${node.end_line}` : "";
@@ -45,6 +50,25 @@ function githubUrl(node: GraphNode, repoInfo: RepoInfo | null): string | null {
   return `${repoInfo.blob_base}/${encodePath(node.file_path)}${lineSuffix(node)}`;
 }
 
+function lineRange(node: GraphNode): string | null {
+  if (!node.start_line) return null;
+  if (node.end_line && node.end_line !== node.start_line)
+    return `:${node.start_line}-${node.end_line}`;
+  return `:${node.start_line}`;
+}
+
+function lineCount(node: GraphNode): number | null {
+  if (!node.start_line || !node.end_line) return null;
+  return node.end_line - node.start_line + 1;
+}
+
+/* The file extension doubles as the language tag; there is no language field
+ * on the node and the extension is what the indexer keyed off anyway. */
+function languageTag(node: GraphNode): string | null {
+  const ext = node.file_path?.split("/").pop()?.split(".").pop();
+  return ext && ext !== node.file_path ? ext : null;
+}
+
 export function NodeDetailPanel({
   node,
   allNodes,
@@ -54,6 +78,8 @@ export function NodeDetailPanel({
   onClose,
   onNavigate,
 }: NodeDetailPanelProps) {
+  const t = useUiMessages();
+  const [theme] = useTheme();
   const [code, setCode] = useState<string | null>(null);
   const [codeLoading, setCodeLoading] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -67,6 +93,9 @@ export function NodeDetailPanel({
 
   const canFetchCode = Boolean(project && node.qualified_name);
   const ghUrl = githubUrl(node, repoInfo);
+  const dotColor = colorForLabel(node.label, theme);
+  const lines = lineCount(node);
+  const language = languageTag(node);
 
   const loadCode = async () => {
     if (!project || !node.qualified_name) return;
@@ -91,12 +120,12 @@ export function NodeDetailPanel({
     const conns: Connection[] = [];
     for (const edge of allEdges) {
       if (edge.source === node.id) {
-        const t = nodeMap.get(edge.target);
-        if (t) conns.push({ node: t, edgeType: edge.type, direction: "outbound" });
+        const target = nodeMap.get(edge.target);
+        if (target) conns.push({ node: target, edgeType: edge.type, direction: "outbound" });
       }
       if (edge.target === node.id) {
-        const s = nodeMap.get(edge.source);
-        if (s) conns.push({ node: s, edgeType: edge.type, direction: "inbound" });
+        const source = nodeMap.get(edge.source);
+        if (source) conns.push({ node: source, edgeType: edge.type, direction: "inbound" });
       }
     }
     return conns;
@@ -112,134 +141,202 @@ export function NodeDetailPanel({
   };
 
   return (
-    <div className="w-full bg-[#0b1920]/95 backdrop-blur-xl flex flex-col h-full min-h-0 overflow-hidden">
+    <div className="w-full flex flex-col">
       {/* Header */}
-      <div className="px-4 pt-4 pb-3 border-b border-border/30">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: colorForLabel(node.label) }} />
-              <h3 className="text-[13px] font-semibold text-foreground truncate">{node.name}</h3>
+      <div className="sticky top-0 z-[5] px-4 py-3.5 flex flex-col gap-[9px] bg-card border-b border-border">
+        <div className="flex items-start gap-2.5">
+          <span
+            className="w-2 h-2 mt-[5px] shrink-0 rounded-full"
+            style={{ backgroundColor: dotColor }}
+          />
+          <div className="flex-1 min-w-0 flex flex-col gap-[5px]">
+            <div className="text-[15px] font-bold tracking-[-0.025em] truncate">
+              {node.qualified_name ?? node.name}
             </div>
-            <span
-              className="inline-block px-2 py-0.5 rounded-md text-[10px] font-medium"
-              style={{ backgroundColor: colorForLabel(node.label) + "18", color: colorForLabel(node.label) }}
-            >
-              {node.label}
-            </span>
+            <div className="flex items-center gap-[7px]">
+              <span className="h-[17px] px-1.5 inline-flex items-center rounded bg-secondary text-secondary-foreground font-mono text-[10px] uppercase tracking-[.07em]">
+                {node.label}
+              </span>
+              {language && (
+                <span className="font-mono text-[10px] uppercase tracking-[.06em] text-muted-foreground">
+                  {language}
+                </span>
+              )}
+            </div>
           </div>
-          <button onClick={onClose} className="text-foreground/20 hover:text-foreground/50 transition-colors text-[16px] leading-none p-1">×</button>
+          <button
+            onClick={onClose}
+            title={t.common.close}
+            aria-label={t.common.close}
+            className="w-6 h-6 shrink-0 flex items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <X size={12} strokeWidth={2.2} />
+          </button>
         </div>
 
         {node.file_path && (
-          <p className="text-[11px] text-foreground/30 font-mono mt-2 break-all leading-relaxed">
+          <div className="font-mono text-[11px] leading-[1.5] text-muted-foreground break-all">
             {node.file_path}
-            {node.start_line ? (
-              <span className="text-foreground/45">
-                {" "}:{node.start_line}
-                {node.end_line && node.end_line !== node.start_line ? `-${node.end_line}` : ""}
-              </span>
-            ) : null}
-          </p>
+            {lineRange(node) && <span className="text-primary"> {lineRange(node)}</span>}
+          </div>
         )}
 
-        {/* Code actions */}
-        <div className="flex flex-wrap items-center gap-2 mt-2.5">
-          {canFetchCode && (
-            <button
-              onClick={code ? () => setCode(null) : loadCode}
-              disabled={codeLoading}
-              className="px-2.5 py-1 rounded-md bg-primary/15 text-primary text-[11px] font-medium hover:bg-primary/25 transition-colors disabled:opacity-50"
-            >
-              {codeLoading ? "Loading…" : code ? "Hide code" : "Show code"}
-            </button>
-          )}
-          {ghUrl && (
-            <a
-              href={ghUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1 rounded-md bg-white/[0.05] text-foreground/60 text-[11px] font-medium hover:bg-white/[0.09] hover:text-foreground/90 transition-colors"
-            >
-              Open on GitHub ↗
-            </a>
-          )}
-        </div>
-
-        {codeError && <p className="text-[11px] text-red-400/80 mt-2">{codeError}</p>}
-        {code && (
-          <pre className="mt-2 max-h-[300px] overflow-auto rounded-md bg-black/40 border border-white/[0.06] p-2.5 text-[10.5px] leading-relaxed font-mono text-foreground/75 whitespace-pre">
-            {code}
-          </pre>
+        {ghUrl && (
+          <a
+            href={ghUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-[11px] text-primary hover:underline w-fit"
+          >
+            {t.detail.openOnGitHub} ↗
+          </a>
         )}
+      </div>
 
-        {/* Stats */}
-        <div className="flex gap-5 mt-3">
+      {/* Degrees + source */}
+      <div className="px-4 py-3.5 flex flex-col gap-3 border-b border-border">
+        <div className="grid grid-cols-3">
           {[
-            { label: "Out", value: outbound.length, color: "text-primary" },
-            { label: "In", value: inbound.length, color: "text-accent" },
-            { label: "Total", value: connections.length, color: "text-foreground" },
-          ].map((s) => (
-            <div key={s.label}>
-              <p className="text-[9px] text-foreground/25 uppercase tracking-widest">{s.label}</p>
-              <p className={`text-[18px] font-semibold tabular-nums ${s.color}`}>{s.value}</p>
+            { label: t.detail.out, value: outbound.length },
+            { label: t.detail.in, value: inbound.length },
+            { label: t.detail.total, value: connections.length },
+          ].map((d) => (
+            <div key={d.label} className="flex flex-col gap-[3px]">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+                {d.label}
+              </span>
+              <span className="font-mono text-[22px] font-semibold leading-none tracking-[-0.02em] tabular-nums">
+                {d.value}
+              </span>
             </div>
           ))}
         </div>
+
+        {canFetchCode && (
+          <button
+            onClick={code ? () => setCode(null) : loadCode}
+            disabled={codeLoading}
+            className="flex items-center justify-between w-full h-7 px-2.5 rounded-[7px] bg-secondary border border-border hover:border-border-strong text-[12px] text-foreground disabled:opacity-50"
+          >
+            <span>
+              {codeLoading ? t.common.loading : code ? t.detail.hideSource : t.detail.showSource}
+            </span>
+            {lines !== null && (
+              <span className="font-mono text-[10px] uppercase tracking-[.07em] text-muted-foreground">
+                {t.detail.lines(lines.toLocaleString())}
+              </span>
+            )}
+          </button>
+        )}
+
+        {codeError && <p className="text-[11px] text-destructive">{codeError}</p>}
+
+        {code && (
+          <pre className="m-0 px-3 py-[11px] max-h-[250px] overflow-x-auto overflow-y-auto rounded-lg bg-input border border-border font-mono text-[11px] leading-[1.65] text-secondary-foreground">
+            {code}
+          </pre>
+        )}
       </div>
 
-      {/* Connections */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-4 py-3 space-y-4">
-          {outbound.length > 0 && (
-            <ConnectionSection title="References" count={outbound.length} icon="→" groups={groupByType(outbound)} onNavigate={onNavigate} />
-          )}
-          {inbound.length > 0 && (
-            <ConnectionSection title="Referenced by" count={inbound.length} icon="←" groups={groupByType(inbound)} onNavigate={onNavigate} />
-          )}
-          {connections.length === 0 && (
-            <p className="text-[12px] text-foreground/20 text-center py-8">No connections</p>
-          )}
-        </div>
-      </ScrollArea>
+      {/* References */}
+      {outbound.length > 0 && (
+        <ConnectionSection
+          title={t.detail.references}
+          count={outbound.length}
+          arrow="→"
+          groups={groupByType(outbound)}
+          onNavigate={onNavigate}
+          theme={theme}
+          t={t}
+        />
+      )}
+      {inbound.length > 0 && (
+        <ConnectionSection
+          title={t.detail.referencedBy}
+          count={inbound.length}
+          arrow="←"
+          groups={groupByType(inbound)}
+          onNavigate={onNavigate}
+          theme={theme}
+          t={t}
+        />
+      )}
+      {connections.length === 0 && (
+        <p className="px-4 py-8 text-center text-[12px] text-muted-foreground">
+          {t.detail.noConnections}
+        </p>
+      )}
     </div>
   );
 }
 
-function ConnectionSection({ title, count, icon, groups, onNavigate }: {
-  title: string; count: number; icon: string;
+function ConnectionSection({
+  title,
+  count,
+  arrow,
+  groups,
+  onNavigate,
+  theme,
+  t,
+}: {
+  title: string;
+  count: number;
+  arrow: string;
   groups: [string, Connection[]][];
   onNavigate: (n: GraphNode) => void;
+  theme: "light" | "dark";
+  t: UiMessages;
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
   return (
-    <div>
-      <p className="text-[11px] font-medium text-foreground/40 mb-2">
-        {title} <span className="text-foreground/15">({count})</span>
-      </p>
-      {groups.map(([type, conns]) => (
-        <div key={type} className="mb-2">
-          <p className="text-[9px] text-foreground/20 uppercase tracking-wider mb-1 font-medium">
-            {type.replace(/_/g, " ").toLowerCase()}
-          </p>
-          <div className="space-y-px">
-            {conns.slice(0, 25).map((c, i) => (
+    <div className="px-4 py-3.5 flex flex-col gap-2.5 border-b border-border">
+      <div className="flex items-center gap-[7px]">
+        <span className="text-[12px] font-semibold text-foreground">{title}</span>
+        <span className="h-[17px] min-w-[17px] px-[5px] inline-flex items-center justify-center rounded bg-secondary text-secondary-foreground font-mono text-[10px]">
+          {count}
+        </span>
+      </div>
+
+      {groups.map(([type, conns]) => {
+        const isOpen = expanded.has(type);
+        const shown = isOpen ? conns : conns.slice(0, VISIBLE_REFERENCES);
+        const hidden = conns.length - shown.length;
+        return (
+          <div key={type} className="flex flex-col gap-[5px]">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[.11em] text-muted-foreground">
+              {type.replace(/_/g, " ").toLowerCase()}
+            </span>
+            {shown.map((c, i) => (
               <button
                 key={`${c.node.id}-${i}`}
                 onClick={() => onNavigate(c.node)}
-                className="flex items-center gap-1.5 w-full text-left px-2 py-[4px] rounded-md hover:bg-white/[0.04] text-[11px] transition-colors group"
+                className="flex items-center gap-[9px] w-full -ml-[7px] px-[7px] py-[5px] rounded-md hover:bg-secondary"
               >
-                <span className="text-foreground/15 text-[10px] group-hover:text-foreground/30">{icon}</span>
-                <span className="w-[5px] h-[5px] rounded-full shrink-0" style={{ backgroundColor: colorForLabel(c.node.label) }} />
-                <span className="text-foreground/55 group-hover:text-foreground/80 truncate">{c.node.name}</span>
-                <span className="text-foreground/10 ml-auto text-[10px] shrink-0">{c.node.label}</span>
+                <span className="w-3 shrink-0 font-mono text-[11px] text-faint">{arrow}</span>
+                <span
+                  className="w-1.5 h-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: colorForLabel(c.node.label, theme) }}
+                />
+                <span className="flex-1 min-w-0 text-left font-mono text-[12px] text-foreground truncate">
+                  {c.node.name}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[.06em] text-muted-foreground">
+                  {c.node.label}
+                </span>
               </button>
             ))}
-            {conns.length > 25 && (
-              <p className="text-[10px] text-foreground/15 px-2 py-1">+{conns.length - 25} more</p>
+            {hidden > 0 && (
+              <button
+                onClick={() => setExpanded((prev) => new Set(prev).add(type))}
+                className="w-full h-7 rounded-[7px] border border-dashed border-border-strong text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+              >
+                {t.detail.moreReferences(hidden.toLocaleString())}
+              </button>
             )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

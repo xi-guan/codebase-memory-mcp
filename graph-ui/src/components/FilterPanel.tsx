@@ -1,6 +1,8 @@
 import { useMemo } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { colorForLabel, STATUS_LEGEND } from "../lib/colors";
+import { Check } from "lucide-react";
+import { colorForLabel, statusLegend } from "../lib/colors";
+import { useTheme } from "../hooks/useTheme";
+import { useUiMessages } from "../lib/i18n";
 import type { GraphData } from "../lib/types";
 
 interface FilterPanelProps {
@@ -28,37 +30,45 @@ interface FilterPanelProps {
   onToggleMissedView: () => void;
 }
 
-/* Checkbox row matching the existing "Show labels" toggle style */
+/* 10px mono uppercase — the label style every section header shares. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
 function CheckRow({
   checked,
   onToggle,
   label,
-  count,
 }: {
   checked: boolean;
   onToggle: () => void;
   label: string;
-  count?: number;
 }) {
   return (
-    <button
-      onClick={onToggle}
-      className={`flex items-center gap-1.5 text-[11px] font-medium transition-all ${
-        checked ? "text-primary" : "text-foreground/40"
-      }`}
-    >
+    <label className="flex items-center gap-[9px] cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="sr-only peer"
+      />
       <span
-        className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
-          checked ? "border-primary bg-primary/20" : "border-foreground/15"
+        className={`w-[15px] h-[15px] shrink-0 rounded-[4px] flex items-center justify-center peer-focus-visible:ring-2 peer-focus-visible:ring-ring ${
+          checked ? "bg-primary" : "border border-border-strong bg-input"
         }`}
       >
-        {checked && <span className="text-primary text-[9px]">✓</span>}
+        {checked && (
+          <Check size={10} strokeWidth={3.4} className="text-primary-foreground" />
+        )}
       </span>
-      {label}
-      {count !== undefined && (
-        <span className="text-foreground/25 tabular-nums">{count.toLocaleString()}</span>
-      )}
-    </button>
+      <span className={`text-[12px] ${checked ? "text-foreground" : "text-secondary-foreground"}`}>
+        {label}
+      </span>
+    </label>
   );
 }
 
@@ -84,6 +94,8 @@ export function FilterPanel({
   missedCount,
   onToggleMissedView,
 }: FilterPanelProps) {
+  const t = useUiMessages();
+  const [theme] = useTheme();
   const { labelCounts, edgeTypeCounts, statusCounts } = useMemo(() => {
     const lc = new Map<string, number>();
     for (const n of data.nodes) lc.set(n.label, (lc.get(n.label) ?? 0) + 1);
@@ -102,135 +114,144 @@ export function FilterPanel({
   const deadCount = statusCounts.get("dead") ?? 0;
 
   return (
-    <div className="flex flex-col shrink-0 max-h-[45%] border-b border-border/40">
-      {/* Header row — always visible */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
-        <span className="text-[11px] font-medium text-foreground/50 uppercase tracking-widest">
-          Filters
-        </span>
-        <div className="flex items-center gap-2">
-          <button onClick={onEnableAll} className="text-[10px] text-primary/70 hover:text-primary transition-colors">All</button>
-          <span className="text-foreground/15">|</span>
-          <button onClick={onDisableAll} className="text-[10px] text-primary/70 hover:text-primary transition-colors">None</button>
+    <>
+      {/* Node types — a 2-column grid, never a wrap: a wrapped last row used
+          to get clipped by the section's height. */}
+      <div className="p-4 pb-[18px] flex flex-col gap-4 shrink-0">
+        <div className="flex items-center justify-between">
+          <SectionLabel>{t.graph.nodeTypes}</SectionLabel>
+          <span className="flex items-center gap-[7px] text-[11px]">
+            <button onClick={onEnableAll} className="text-primary">
+              {t.common.all}
+            </button>
+            <span className="text-faint">/</span>
+            <button onClick={onDisableAll} className="text-muted-foreground hover:text-foreground">
+              {t.common.none}
+            </button>
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-[5px]">
+          {labelCounts.map(([label, count]) => {
+            const on = enabledLabels.has(label);
+            return (
+              <button
+                key={label}
+                onClick={() => onToggleLabel(label)}
+                aria-pressed={on}
+                className={`flex items-center gap-1.5 h-[26px] px-2 min-w-0 rounded-md border bg-card ${
+                  on ? "border-border hover:border-border-strong" : "border-border opacity-45"
+                }`}
+              >
+                <span
+                  className="w-[7px] h-[7px] shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: on
+                      ? colorForLabel(label, theme)
+                      : "var(--cbm-faint)",
+                  }}
+                />
+                <span className="flex-1 text-left text-[11px] text-foreground truncate">
+                  {label}
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {count.toLocaleString()}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Scrollable filter groups */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-4 pb-3 space-y-3">
-          {/* Node types */}
-          {labelCounts.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-foreground/40 mb-1.5 uppercase tracking-wider">Node types</p>
-              <div className="flex flex-wrap gap-1">
-                {labelCounts.map(([label, count]) => {
-                  const on = enabledLabels.has(label);
-                  const c = colorForLabel(label);
-                  return (
-                    <button
-                      key={label}
-                      onClick={() => onToggleLabel(label)}
-                      className={`inline-flex items-center gap-1 px-1.5 py-[3px] rounded-md text-[10px] font-medium transition-all border ${
-                        on ? "border-white/[0.08] bg-white/[0.04]" : "border-transparent opacity-25"
-                      }`}
-                    >
-                      <span className="w-[5px] h-[5px] rounded-full" style={{ backgroundColor: on ? c : "#444" }} />
-                      <span style={{ color: on ? c : "#555" }}>{label}</span>
-                      <span className="text-foreground/20 tabular-nums">{count.toLocaleString()}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+      <div className="h-px bg-border shrink-0" />
 
-          {/* Relationships */}
-          {edgeTypeCounts.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-foreground/40 mb-1.5 uppercase tracking-wider">Relationships</p>
-              <div className="flex flex-wrap gap-1">
-                {edgeTypeCounts.map(([type, count]) => {
-                  const on = enabledEdgeTypes.has(type);
-                  return (
-                    <button
-                      key={type}
-                      onClick={() => onToggleEdgeType(type)}
-                      className={`inline-flex items-center gap-1 px-1.5 py-[3px] rounded-md text-[10px] font-medium transition-all border ${
-                        on ? "border-white/[0.06] bg-white/[0.03] text-foreground/60" : "border-transparent opacity-20 text-foreground/30"
-                      }`}
-                    >
+      {/* Relationships — not in the redesign's sidebar list, but dropping it
+          would remove edge-type filtering entirely; same chip system. */}
+      {edgeTypeCounts.length > 0 && (
+        <>
+          <div className="p-4 flex flex-col gap-4 shrink-0">
+            <SectionLabel>Relationships</SectionLabel>
+            <div className="grid grid-cols-2 gap-[5px]">
+              {edgeTypeCounts.map(([type, count]) => {
+                const on = enabledEdgeTypes.has(type);
+                return (
+                  <button
+                    key={type}
+                    onClick={() => onToggleEdgeType(type)}
+                    aria-pressed={on}
+                    className={`flex items-center gap-1.5 h-[26px] px-2 min-w-0 rounded-md border border-border bg-card ${
+                      on ? "hover:border-border-strong" : "opacity-45"
+                    }`}
+                  >
+                    <span className="flex-1 text-left text-[11px] text-foreground truncate">
                       {type.replace(/_/g, " ").toLowerCase()}
-                      <span className="text-foreground/15 tabular-nums">{count.toLocaleString()}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                    </span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {count.toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </div>
-      </ScrollArea>
+          </div>
+          <div className="h-px bg-border shrink-0" />
+        </>
+      )}
 
-      {/* Missed skeleton (#963): white satellite cluster of files the indexer
-          could not fully cover, shown beside the code galaxy. Click it to
-          focus; click the code galaxy to come back. */}
-      <div className="px-4 pt-2 border-t border-border/30 space-y-2 shrink-0">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-foreground/30 uppercase tracking-widest">
-            Missed files
-          </span>
+      {/* Missed skeleton (#963): files the indexer could not fully cover,
+          shown as a hollow satellite beside the code galaxy. */}
+      <div className="p-4 flex flex-col gap-[11px] shrink-0">
+        <div className="flex items-baseline justify-between">
+          <SectionLabel>{t.graph.missedFiles}</SectionLabel>
           {missedCount > 0 && (
-            <span className="text-[10px] text-foreground/50 tabular-nums">
-              {missedCount.toLocaleString()} files
+            <span className="font-mono text-[11px] text-secondary-foreground">
+              {missedCount.toLocaleString()}
             </span>
           )}
         </div>
         <CheckRow
           checked={missedView}
           onToggle={onToggleMissedView}
-          label="Show missed skeleton"
+          label={t.graph.showMissedSkeleton}
         />
-        <p className="text-[9px] leading-snug text-foreground/30">
-          {missedCount > 0
-            ? "White satellite = files not fully indexed (best-effort). Click it to focus, click the galaxy to return."
-            : "No known misses (best-effort — not a completeness guarantee)."}
+        <p className="ml-6 text-[11px] leading-[1.5] text-muted-foreground [text-wrap:pretty]">
+          {missedCount > 0 ? t.graph.missedExplainer : t.graph.missedNone}
         </p>
       </div>
 
-      {/* Dead-code view */}
-      <div className="px-4 pt-2 border-t border-border/30 space-y-2 shrink-0">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-foreground/30 uppercase tracking-widest">
-            Dead code
-          </span>
-          <span className="text-[10px] text-red-400/80 tabular-nums">
-            {deadCount.toLocaleString()} dead
+      <div className="h-px bg-border shrink-0" />
+
+      <div className="p-4 flex flex-col gap-[11px] shrink-0">
+        <div className="flex items-baseline justify-between">
+          <SectionLabel>{t.graph.deadCode}</SectionLabel>
+          <span className="font-mono text-[11px] text-destructive">
+            {t.graph.deadCount(deadCount.toLocaleString())}
           </span>
         </div>
 
         <CheckRow
           checked={deadCodeView}
           onToggle={onToggleDeadCodeView}
-          label="Color by status"
+          label={t.graph.colorByStatus}
         />
         <CheckRow
           checked={showOnlyDead}
           onToggle={onToggleShowOnlyDead}
-          label="Show only dead code"
+          label={t.graph.showOnlyDead}
         />
         <CheckRow
           checked={hideEntryPoints}
           onToggle={onToggleHideEntryPoints}
-          label="Hide entry points"
+          label={t.graph.hideEntryPoints}
         />
-        <CheckRow checked={hideTests} onToggle={onToggleHideTests} label="Hide tests" />
+        <CheckRow checked={hideTests} onToggle={onToggleHideTests} label={t.graph.hideTests} />
 
-        {/* Legend (only meaningful while colored by status) */}
+        {/* Only meaningful while the graph is coloured by status. */}
         {deadCodeView && (
-          <div className="flex flex-wrap gap-x-2 gap-y-1 pt-1">
-            {STATUS_LEGEND.map((s) => (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+            {statusLegend(theme).map((s) => (
               <span
                 key={s.status}
-                className="inline-flex items-center gap-1 text-[9px] text-foreground/40"
+                className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
               >
                 <span
                   className="w-[6px] h-[6px] rounded-full"
@@ -241,24 +262,17 @@ export function FilterPanel({
             ))}
           </div>
         )}
+
+        <div className="pt-1">
+          <CheckRow
+            checked={showLabels}
+            onToggle={onToggleShowLabels}
+            label={t.graph.showLabels}
+          />
+        </div>
       </div>
 
-      {/* Display options — pinned footer */}
-      <div className="px-4 py-2.5 border-t border-border/20 shrink-0">
-        <button
-          onClick={onToggleShowLabels}
-          className={`inline-flex items-center gap-1.5 text-[11px] font-medium transition-all ${
-            showLabels ? "text-primary" : "text-foreground/30"
-          }`}
-        >
-          <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
-            showLabels ? "border-primary bg-primary/20" : "border-foreground/15"
-          }`}>
-            {showLabels && <span className="text-primary text-[9px]">✓</span>}
-          </span>
-          Show labels
-        </button>
-      </div>
-    </div>
+      <div className="h-px bg-border shrink-0" />
+    </>
   );
 }
