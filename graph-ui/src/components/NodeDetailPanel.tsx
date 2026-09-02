@@ -152,9 +152,9 @@ export function NodeDetailPanel({
             style={{ backgroundColor: dotColor }}
           />
           <div className="flex-1 min-w-0 flex flex-col gap-[5px]">
-            <div className="text-[15px] font-bold tracking-[-0.025em] truncate">
+            <h2 className="m-0 text-[15px] font-bold tracking-[-0.025em] truncate">
               {node.qualified_name ?? node.name}
-            </div>
+            </h2>
             <div className="flex items-center gap-[7px]">
               <span className="h-[17px] px-1.5 inline-flex items-center rounded bg-secondary text-secondary-foreground font-mono text-[10px] uppercase tracking-[.07em]">
                 {node.label}
