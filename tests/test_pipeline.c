@@ -17,6 +17,7 @@
 #include "git/git_context.h"
 #include "foundation/dump_verify.h"
 #include "foundation/sha256.h"
+#include "foundation/sanitized.h" // CBM_SANITIZED (skips a wall-clock budget assertion)
 #include "foundation/compat_fs.h"
 #include "foundation/log.h"
 #include "foundation/win_utf8.h" // cbm_utf8_to_wide (Windows pipeline_test_set_mtime); no-op elsewhere
@@ -13023,16 +13024,31 @@ TEST(pipeline_lsp_surface_decode_is_linear_in_def_count) {
     int count = cbm_lsp_surface_defs_from_json(&arena, json, &defs);
     double elapsed_ms = 1000.0 * (double)(clock() - started) / (double)CLOCKS_PER_SEC;
 
-    ASSERT_EQ(count, DEFS);
-    ASSERT_NOT_NULL(defs);
-    /* order must survive the rewrite: registration consumes this array positionally */
-    ASSERT_STR_EQ(defs[0].qualified_name, "q0");
-    ASSERT_STR_EQ(defs[DEFS - 1].qualified_name, "q99999");
-    ASSERT_STR_EQ(defs[DEFS - 1].short_name, "s99999");
-    ASSERT_TRUE(elapsed_ms < BUDGET_MS);
-
+    /* copy out first, release, then assert: greatest's ASSERT_* macros return,
+     * so anything asserted ahead of the frees leaks the 6.4 MB buffer + arena */
+    bool shape_ok = (count == DEFS) && defs != NULL;
+    char first_qn[32] = "", last_qn[32] = "", last_sn[32] = "";
+    if (shape_ok) {
+        snprintf(first_qn, sizeof(first_qn), "%s", defs[0].qualified_name);
+        snprintf(last_qn, sizeof(last_qn), "%s", defs[DEFS - 1].qualified_name);
+        snprintf(last_sn, sizeof(last_sn), "%s", defs[DEFS - 1].short_name);
+    }
     cbm_arena_destroy(&arena);
     free(json);
+
+    ASSERT_EQ(count, DEFS);
+    ASSERT_TRUE(shape_ok);
+    /* order must survive the rewrite: registration consumes this array positionally */
+    ASSERT_STR_EQ(first_qn, "q0");
+    ASSERT_STR_EQ(last_qn, "q99999");
+    ASSERT_STR_EQ(last_sn, "s99999");
+#if !CBM_SANITIZED
+    /* instrumentation costs 5-20x per arena_strdup; the order assertions above
+     * are what pins the O(n) rewrite, so only wall-clock is dropped here */
+    ASSERT_TRUE(elapsed_ms < BUDGET_MS);
+#else
+    (void)elapsed_ms;
+#endif
     PASS();
 }
 

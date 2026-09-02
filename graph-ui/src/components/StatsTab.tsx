@@ -47,7 +47,7 @@ function HealthDot({ name }: { name: string }) {
 
   const dotColor =
     status === "healthy" ? "var(--cbm-ok)" :
-    status === "missing" ? "var(--cbm-primary)" :
+    status === "missing" ? "var(--cbm-warn)" :
     status === "corrupt" ? "var(--cbm-destructive)" : "var(--cbm-faint)";
 
   const label =
@@ -443,7 +443,7 @@ function CreateIndexModal({ onClose, onCreated }: { onClose: () => void; onCreat
                   aria-label={t.index.indexDirectory(d)}
                   onClick={() => submit(joinPath(currentPath, d))}
                   disabled={submitting}
-                  className="cbm-hov opacity-0 transition-opacity duration-[120ms] h-[22px] px-2 inline-flex items-center rounded-[5px] border border-border bg-card font-mono text-[10px] font-semibold uppercase tracking-[.06em] text-primary disabled:opacity-30"
+                  className="cbm-hov transition-opacity duration-[120ms] h-[22px] px-2 inline-flex items-center rounded-[5px] border border-border bg-card font-mono text-[10px] font-semibold uppercase tracking-[.06em] text-primary disabled:opacity-30"
                 >
                   {t.index.indexChip}
                 </button>
@@ -695,7 +695,7 @@ export function StatsTab({ onSelectProject }: StatsTabProps) {
                         {t.projects.nodeCount(nodes.toLocaleString())}
                       </span>
                     )}
-                    <div className="cbm-hov flex items-center gap-1 shrink-0 opacity-0 transition-opacity duration-[120ms]">
+                    <div className="cbm-hov flex items-center gap-1 shrink-0 transition-opacity duration-[120ms]">
                       <AdrButton project={name} />
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteProject(name); }}

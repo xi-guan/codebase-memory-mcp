@@ -100,7 +100,10 @@ function writeColor(
     temp.multiplyScalar(1 + (full - 1) * boost);
   }
 
-  return [temp.r * opacity, temp.g * opacity, temp.b * opacity];
+  /* fade toward the canvas, not toward black: a multiply darkens on a pale
+   * ground, which reads as MORE salient in light mode, not less */
+  temp.lerp(background, 1 - opacity);
+  return [temp.r, temp.g, temp.b];
 }
 
 /* Round sprites for point mode (module-level lazy singletons). */

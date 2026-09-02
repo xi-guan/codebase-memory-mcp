@@ -19,6 +19,8 @@ import {
 } from "../lib/density";
 
 const BASE_BLOOM_INTENSITY = 1.45;
+/* light mode reuses the bloom slider for edge opacity; bloom's own minimum is 0 */
+const LIGHT_EDGE_BLOOM_FLOOR = 0.35;
 
 /* ── Camera fly-to animation ────────────────────────────── */
 
@@ -154,13 +156,14 @@ export function GraphScene({
    * NodeCloud applies `nodeBoost` directly (no internal density scaling),
    * whereas EdgeLines scales by edge density itself — so it receives only the
    * user edge-brightness multiplier to avoid double-applying.
-   * Bloom is dark-only; in light the bloom slider drives edge opacity. */
+   * Bloom is dark-only; in light the bloom slider drives edge opacity, floored
+   * so a bloom of 0 carried over from dark cannot erase the whole link web. */
   const nodeBoost = nodeBoostScale(data.nodes.length) * display.nodeGlow;
   const bloomIntensity =
     BASE_BLOOM_INTENSITY * bloomIntensityScale(data.nodes.length) * display.bloom;
   const edgeBrightness = dark
     ? display.edgeBrightness
-    : display.edgeBrightness * display.bloom;
+    : display.edgeBrightness * Math.max(display.bloom, LIGHT_EDGE_BLOOM_FLOOR);
 
   return (
     <Canvas
@@ -227,6 +230,14 @@ export function GraphScene({
             onClick={onNodeClick}
             boost={nodeBoost * 0.75}
           />
+          {showLabels && (
+            <NodeLabels
+              nodes={missed.nodes}
+              highlightedIds={null}
+              theme={theme}
+              colorByStatus={colorByStatus}
+            />
+          )}
         </group>
       )}
 

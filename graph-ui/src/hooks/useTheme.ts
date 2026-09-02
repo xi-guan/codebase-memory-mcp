@@ -53,6 +53,9 @@ export function useTheme(): [Theme, (next: Theme) => void] {
     if (typeof window.matchMedia !== "function") return;
     const query = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = (event: MediaQueryListEvent) => {
+      /* re-checked per event: picking the theme already active is a no-op
+       * setState, so this effect never re-runs to drop the listener */
+      if (readStored()) return;
       apply(event.matches ? "dark" : "light");
     };
     query.addEventListener("change", onChange);

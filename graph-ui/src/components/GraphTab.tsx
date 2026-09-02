@@ -158,16 +158,23 @@ export function GraphTab({ project }: GraphTabProps) {
     setCameraTarget(null);
   }, []);
 
-  /* Esc clears the selection and closes the Display popover. */
+  /* Esc dismisses one layer at a time: the Display popover if it is open,
+   * otherwise the selection. Clearing both at once meant closing any overlay
+   * — or pressing Esc in a text field — also destroyed the selection. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      setDisplayOpen(false);
+      if (displayOpen) {
+        setDisplayOpen(false);
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
       clearSelection();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [clearSelection]);
+  }, [clearSelection, displayOpen]);
 
   /* Close the Display popover on an outside click. */
   useEffect(() => {
@@ -553,7 +560,9 @@ export function GraphTab({ project }: GraphTabProps) {
 
               {selectionCount > 0 && (
                 <div className="flex items-center gap-2 h-[26px] px-[11px] w-max shrink-0 whitespace-nowrap rounded-[7px] bg-primary border border-primary font-mono text-[11px] font-semibold text-primary-foreground">
-                  {t.graph.selection(selectionCount, selectionCount - 1)}
+                  {selectedNode
+                    ? t.graph.selection(selectionCount, selectionCount - 1)
+                    : t.graph.selectionGroup(selectionCount)}
                 </div>
               )}
             </div>

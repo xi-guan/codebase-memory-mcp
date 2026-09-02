@@ -65,8 +65,10 @@ function lineCount(node: GraphNode): number | null {
 /* The file extension doubles as the language tag; there is no language field
  * on the node and the extension is what the indexer keyed off anyway. */
 function languageTag(node: GraphNode): string | null {
-  const ext = node.file_path?.split("/").pop()?.split(".").pop();
-  return ext && ext !== node.file_path ? ext : null;
+  const base = node.file_path?.split("/").pop();
+  /* no dot means no extension: Makefile / Dockerfile are not languages */
+  if (!base || !base.includes(".")) return null;
+  return base.split(".").pop() || null;
 }
 
 export function NodeDetailPanel({
@@ -241,6 +243,7 @@ export function NodeDetailPanel({
       {/* References */}
       {outbound.length > 0 && (
         <ConnectionSection
+          key={`out-${node.id}`}
           title={t.detail.references}
           count={outbound.length}
           arrow="→"
@@ -252,6 +255,7 @@ export function NodeDetailPanel({
       )}
       {inbound.length > 0 && (
         <ConnectionSection
+          key={`in-${node.id}`}
           title={t.detail.referencedBy}
           count={inbound.length}
           arrow="←"

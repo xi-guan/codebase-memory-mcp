@@ -57,10 +57,12 @@ install:
     fi
     echo "→ building (with UI)"
     scripts/build.sh --with-ui
-    # a running daemon holds the binary open; cp over it fails with ETXTBSY
+    # a running daemon holds the binary open; cp over it fails with ETXTBSY.
+    # anchor the pkill to the install path: a bare -f '{{bin_name}}' also matches
+    # every process whose argv carries this repo path, vite dev server included
     echo "→ stopping daemon"
     "$dest" daemon stop >/dev/null 2>&1 || true
-    pkill -f '{{bin_name}}' 2>/dev/null || true
+    pkill -f "^$dest" 2>/dev/null || true
     sleep 1
     echo "→ installing to {{install_dir}}"
     mkdir -p "{{install_dir}}"
@@ -89,6 +91,9 @@ uninstall:
     #!/usr/bin/env bash
     set -euo pipefail
     dest="{{install_dir}}/{{bin_name}}"
+    echo "will remove: $dest, build/c, graph-ui/node_modules, graph-ui/dist"
+    read -r -p "proceed? [y/N] " reply
+    [ "$reply" = "y" ] || [ "$reply" = "Y" ] || { echo "aborted"; exit 0; }
     if [ -f "$dest" ]; then
         echo "→ removing $dest"
         rm -f "$dest"

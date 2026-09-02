@@ -142,7 +142,7 @@ export function ControlTab() {
               {t.control.panel}
             </h1>
             <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-ok" />
+              <span className={`w-1.5 h-1.5 rounded-full ${self ? "bg-ok" : "bg-faint"}`} />
               {self
                 ? t.control.status(String(self.pid), self.elapsed)
                 : t.control.stopped}

@@ -30,6 +30,7 @@
   --cbm-loader: #1A5FB4;
   --cbm-faint: #90A2A5;
   --cbm-ok: #157F5C;
+  --cbm-warn: #96590B;
   --cbm-canvas: #EDF1F2;
   --cbm-shade: #2b393c4d;
 }
@@ -59,6 +60,7 @@
   --cbm-loader: #E9A63C;
   --cbm-faint: #4C5F64;
   --cbm-ok: #57C79A;
+  --cbm-warn: #FBBF24;
   --cbm-canvas: #06090B;
   --cbm-shade: #0000005c;
 }
@@ -88,6 +90,7 @@
   --color-sidebar: var(--cbm-sidebar);
   --color-faint: var(--cbm-faint);
   --color-ok: var(--cbm-ok);
+  --color-warn: var(--cbm-warn);
   --color-canvas: var(--cbm-canvas);
   --color-shade: var(--cbm-shade);
   --font-sans: 'Helvetica Neue', Helvetica, Inter, 'Segoe UI', system-ui, Arial, sans-serif;
@@ -133,9 +136,24 @@ input[type="range"] {
   background: transparent;
 }
 
-/* hover-revealed row actions — the only hover transition in the app */
-.cbm-row:hover .cbm-hov {
+/* hover-revealed row actions — the only hover transition in the app.
+ * opacity lives here rather than on the element: an opacity-0 control still
+ * takes clicks and focus, so the two must move together. */
+.cbm-hov {
+  opacity: 0;
+  pointer-events: none;
+}
+.cbm-row:hover .cbm-hov,
+.cbm-row:focus-within .cbm-hov {
   opacity: 1;
+  pointer-events: auto;
+}
+/* a touch pointer never matches :hover — keep row actions reachable there */
+@media (hover: none) {
+  .cbm-hov {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* ── Status dot ──────────────────────────────────────────────── */

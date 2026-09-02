@@ -58,6 +58,7 @@ export const messages = {
         `${total.toLocaleString()} selected · 1 focus + ${neighbours.toLocaleString()} ${
           neighbours === 1 ? "neighbour" : "neighbours"
         }`,
+      selectionGroup: (total: number) => `${total.toLocaleString()} selected`,
       canvasHint: "drag to orbit · scroll to zoom · click a node for detail",
       budgetLabel: "nodes",
       budgetHelp:
@@ -218,6 +219,7 @@ export const messages = {
       raiseBudget: "提高上限",
       selection: (total: number, neighbours: number) =>
         `已选 ${total.toLocaleString()} · 1 焦点 + ${neighbours.toLocaleString()} 邻居`,
+      selectionGroup: (total: number) => `已选 ${total.toLocaleString()}`,
       canvasHint: "拖动旋转 · 滚轮缩放 · 点击节点查看详情",
       budgetLabel: "节点",
       budgetHelp: "加载多少节点（每档 5,000，已加载节点之间的边自动跟随）",
