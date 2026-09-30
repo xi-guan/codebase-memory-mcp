@@ -8,6 +8,8 @@ import { NodeCloud } from "./NodeCloud";
 import { EdgeLines } from "./EdgeLines";
 import { NodeLabels } from "./NodeLabels";
 import { NodeTooltip } from "./NodeTooltip";
+import { useTheme } from "../hooks/useTheme";
+import { CANVAS_BACKGROUND, themed } from "../lib/colors";
 import type { GraphData, GraphNode, LinkedProject } from "../lib/types";
 import {
   DEFAULT_DISPLAY_SETTINGS,
@@ -17,6 +19,8 @@ import {
 } from "../lib/density";
 
 const BASE_BLOOM_INTENSITY = 1.45;
+/* light mode reuses the bloom slider for edge opacity; bloom's own minimum is 0 */
+const LIGHT_EDGE_BLOOM_FLOOR = 0.35;
 
 /* ── Camera fly-to animation ────────────────────────────── */
 
@@ -112,13 +116,14 @@ function IdleAutoRotate({
 
 interface GraphSceneProps {
   data: GraphData;
-  /* Missed skeleton (#963): pre-offset, pre-painted white nodes + edges of
-   * the not-fully-indexed files, rendered as a ghost cluster beside the
-   * galaxy. null hides it. */
+  /* Missed skeleton (#963): pre-offset nodes + edges of the not-fully-indexed
+   * files, drawn as hollow rings beside the galaxy. null hides it. */
   missed?: { nodes: GraphNode[]; edges: GraphData["edges"] } | null;
   highlightedIds: Set<number> | null;
+  focusId?: number | null;
   cameraTarget: CameraTarget | null;
   showLabels: boolean;
+  colorByStatus?: boolean;
   display?: DisplaySettings;
   onNodeClick: (node: GraphNode) => void;
   /* Fired when a click hits empty space (no node). Used to fly back to the
@@ -132,28 +137,38 @@ export function GraphScene({
   data,
   missed = null,
   highlightedIds,
+  focusId = null,
   cameraTarget,
   showLabels,
+  colorByStatus = false,
   display = DEFAULT_DISPLAY_SETTINGS,
   onNodeClick,
   onBackgroundClick,
 }: GraphSceneProps) {
   const [hovered, setHovered] = useState<GraphNode | null>(null);
+  const [theme] = useTheme();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const dark = theme === "dark";
+  const background = themed(CANVAS_BACKGROUND, theme);
 
   /* Adaptive density defaults × user multipliers. The automatic scale keeps
    * contrast roughly constant as the graph grows; the sliders nudge it.
    * NodeCloud applies `nodeBoost` directly (no internal density scaling),
    * whereas EdgeLines scales by edge density itself — so it receives only the
-   * user edge-brightness multiplier to avoid double-applying. */
+   * user edge-brightness multiplier to avoid double-applying.
+   * Bloom is dark-only; in light the bloom slider drives edge opacity, floored
+   * so a bloom of 0 carried over from dark cannot erase the whole link web. */
   const nodeBoost = nodeBoostScale(data.nodes.length) * display.nodeGlow;
   const bloomIntensity =
     BASE_BLOOM_INTENSITY * bloomIntensityScale(data.nodes.length) * display.bloom;
+  const edgeBrightness = dark
+    ? display.edgeBrightness
+    : display.edgeBrightness * Math.max(display.bloom, LIGHT_EDGE_BLOOM_FLOOR);
 
   return (
     <Canvas
       camera={{ position: [0, 0, 800], fov: 50, near: 0.1, far: 100000 }}
-      style={{ background: "#06090f" }}
+      style={{ background }}
       dpr={GRAPH_CANVAS_DPR}
       gl={{
         antialias: false,
@@ -162,31 +177,38 @@ export function GraphScene({
       }}
       onPointerMissed={onBackgroundClick}
     >
-      <color attach="background" args={["#06090f"]} />
+      <color attach="background" args={[background]} />
       <ambientLight intensity={0.5} />
       <pointLight position={[500, 500, 500]} intensity={0.6} />
-      <pointLight
-        position={[-300, -200, -300]}
-        intensity={0.4}
-        color="#6040ff"
-      />
 
       <EdgeLines
         nodes={data.nodes}
         edges={data.edges}
         highlightedIds={highlightedIds}
-        brightness={display.edgeBrightness}
+        focusId={focusId}
+        theme={theme}
+        brightness={edgeBrightness}
       />
       <NodeCloud
         nodes={data.nodes}
         highlightedIds={highlightedIds}
+        focusId={focusId}
+        theme={theme}
+        colorByStatus={colorByStatus}
         onHover={setHovered}
         onClick={onNodeClick}
         boost={nodeBoost}
       />
-      {showLabels && <NodeLabels nodes={data.nodes} highlightedIds={highlightedIds} />}
+      {showLabels && (
+        <NodeLabels
+          nodes={data.nodes}
+          highlightedIds={highlightedIds}
+          theme={theme}
+          colorByStatus={colorByStatus}
+        />
+      )}
 
-      {/* Missed skeleton (#963): white ghost of the not-fully-indexed files.
+      {/* Missed skeleton (#963): hollow ghost of the not-fully-indexed files.
        * Clicks route through the same handler — GraphTab re-centers the
        * camera on the whole skeleton cluster. */}
       {missed && missed.nodes.length > 0 && (
@@ -195,18 +217,27 @@ export function GraphScene({
             nodes={missed.nodes}
             edges={missed.edges}
             highlightedIds={null}
+            theme={theme}
             opacity={0.28}
-            brightness={display.edgeBrightness}
+            brightness={edgeBrightness}
           />
           <NodeCloud
             nodes={missed.nodes}
             highlightedIds={null}
+            theme={theme}
+            hollow
             onHover={setHovered}
             onClick={onNodeClick}
-            opacity={0.6}
             boost={nodeBoost * 0.75}
           />
-          {showLabels && <NodeLabels nodes={missed.nodes} highlightedIds={null} />}
+          {showLabels && (
+            <NodeLabels
+              nodes={missed.nodes}
+              highlightedIds={null}
+              theme={theme}
+              colorByStatus={colorByStatus}
+            />
+          )}
         </group>
       )}
 
@@ -224,12 +255,15 @@ export function GraphScene({
               nodes={offsetNodes}
               edges={lp.edges}
               highlightedIds={null}
+              theme={theme}
               opacity={0.3}
-              brightness={display.edgeBrightness}
+              brightness={edgeBrightness}
             />
             <NodeCloud
               nodes={offsetNodes}
               highlightedIds={null}
+              theme={theme}
+              colorByStatus={colorByStatus}
               onHover={setHovered}
               onClick={onNodeClick}
               opacity={0.5}
@@ -243,8 +277,10 @@ export function GraphScene({
                 targetNodes={offsetNodes}
                 edges={lp.cross_edges}
                 highlightedIds={highlightedIds}
+                focusId={focusId}
+                theme={theme}
                 opacity={0.85}
-                brightness={display.edgeBrightness}
+                brightness={edgeBrightness}
               />
             )}
           </group>
@@ -256,15 +292,17 @@ export function GraphScene({
       <CameraAnimator target={cameraTarget} controlsRef={controlsRef} />
       <IdleAutoRotate controlsRef={controlsRef} />
 
-      <EffectComposer multisampling={GRAPH_COMPOSER_MULTISAMPLING}>
-        <Bloom
-          luminanceThreshold={0.3}
-          luminanceSmoothing={0.7}
-          intensity={bloomIntensity}
-          mipmapBlur
-          radius={0.6}
-        />
-      </EffectComposer>
+      {dark && (
+        <EffectComposer multisampling={GRAPH_COMPOSER_MULTISAMPLING}>
+          <Bloom
+            luminanceThreshold={0.3}
+            luminanceSmoothing={0.7}
+            intensity={bloomIntensity}
+            mipmapBlur
+            radius={0.6}
+          />
+        </EffectComposer>
+      )}
 
       <OrbitControls
         ref={controlsRef}

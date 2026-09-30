@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import type { GraphNode } from "../lib/types";
+import { colorForLabel } from "../lib/colors";
+import { useTheme } from "../hooks/useTheme";
 import { useUiMessages } from "../lib/i18n";
 
 interface SidebarProps {
@@ -65,7 +67,9 @@ function TreeItem({ dir, depth, onSelect, selectedPath }: {
   selectedPath: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [theme] = useTheme();
   const isSelected = selectedPath === dir.fullPath;
+  const hasChildren = dir.children.size > 0 || dir.directNodes.length > 0;
   const sorted = useMemo(() => [...dir.children.values()].sort((a, b) => a.name.localeCompare(b.name)), [dir.children]);
   const sortedNodes = useMemo(() => [...dir.directNodes].sort((a, b) => a.name.localeCompare(b.name)), [dir.directNodes]);
 
@@ -73,16 +77,22 @@ function TreeItem({ dir, depth, onSelect, selectedPath }: {
     <div>
       <button
         onClick={() => { setExpanded(!expanded); onSelect(dir.fullPath, dir.nodeIds, undefined); }}
-        className={`flex items-center gap-1.5 w-full text-left px-3 py-[5px] text-[12px] transition-colors ${
-          isSelected ? "bg-primary/10 text-primary" : "text-foreground/60 hover:text-foreground/80 hover:bg-white/[0.03]"
+        className={`flex items-center gap-2 w-full h-7 px-2 rounded-md hover:bg-secondary ${
+          isSelected ? "bg-secondary" : ""
         }`}
-        style={{ paddingLeft: `${depth * 16 + 12}px` }}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
-        <span className="text-foreground/20 w-3 text-center text-[10px] shrink-0">
-          {(dir.children.size > 0 || dir.directNodes.length > 0) ? (expanded ? "▾" : "▸") : ""}
+        <span className="w-[9px] shrink-0 text-faint">
+          {hasChildren && (expanded ? <ChevronDown size={9} strokeWidth={1.5} /> : <ChevronRight size={9} strokeWidth={1.5} />)}
         </span>
-        <span className="truncate font-medium">{dir.name}</span>
-        <span className="text-foreground/15 ml-auto text-[10px] tabular-nums shrink-0">{dir.nodeIds.size}</span>
+        <span
+          className={`flex-1 text-left font-mono text-[12px] truncate ${
+            isSelected ? "text-primary" : "text-secondary-foreground"
+          }`}
+        >
+          {dir.name}
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground">{dir.nodeIds.size}</span>
       </button>
       {expanded && (
         <>
@@ -91,12 +101,19 @@ function TreeItem({ dir, depth, onSelect, selectedPath }: {
             <button
               key={gn.id}
               onClick={() => onSelect(dir.fullPath + "/" + gn.name, new Set([gn.id]), gn)}
-              className="flex items-center gap-1.5 w-full text-left px-3 py-[3px] text-[11px] text-foreground/40 hover:text-foreground/60 hover:bg-white/[0.02] transition-colors"
-              style={{ paddingLeft: `${(depth+1) * 16 + 12}px` }}
+              className="flex items-center gap-2 w-full h-7 px-2 rounded-md hover:bg-secondary"
+              style={{ paddingLeft: `${(depth+1) * 12 + 8}px` }}
             >
-              <span className="w-[5px] h-[5px] rounded-full shrink-0" style={{ backgroundColor: gn.color }} />
-              <span className="truncate font-mono">{gn.name}</span>
-              <span className="text-foreground/10 ml-auto text-[10px] shrink-0">{gn.label}</span>
+              <span
+                className="w-[6px] h-[6px] shrink-0 rounded-full"
+                style={{ backgroundColor: colorForLabel(gn.label, theme) }}
+              />
+              <span className="flex-1 text-left font-mono text-[12px] text-secondary-foreground truncate">
+                {gn.name}
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-[.06em] text-muted-foreground">
+                {gn.label}
+              </span>
             </button>
           ))}
         </>
@@ -107,6 +124,7 @@ function TreeItem({ dir, depth, onSelect, selectedPath }: {
 
 export function Sidebar({ nodes, onSelectPath, selectedPath }: SidebarProps) {
   const t = useUiMessages();
+  const [theme] = useTheme();
   const [search, setSearch] = useState("");
   const tree = useMemo(() => flattenSingleChild(buildFileTree(nodes)), [nodes]);
 
@@ -119,60 +137,53 @@ export function Sidebar({ nodes, onSelectPath, selectedPath }: SidebarProps) {
   const topLevel = useMemo(() => [...tree.children.values()].sort((a, b) => a.name.localeCompare(b.name)), [tree.children]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="px-4 pt-3 pb-2 shrink-0">
-        <span className="text-[11px] font-medium text-foreground/50 uppercase tracking-widest">
+    <>
+      <div className="px-4 pt-4 pb-2 flex flex-col gap-2.5 shrink-0">
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
           {t.graph.folders}
         </span>
-      </div>
-      <div className="px-3 pb-2.5 border-b border-border/30 shrink-0">
-        <div className="relative">
+        <div className="flex items-center gap-[7px] h-[30px] px-[9px] bg-input border border-border rounded-[7px] focus-within:border-border-strong">
+          <Search size={12} strokeWidth={2} className="shrink-0 text-muted-foreground" />
           <input
             type="text"
             placeholder={t.graph.search}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white/[0.04] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-foreground placeholder-foreground/25 outline-none focus:border-primary/40 focus:bg-white/[0.06] transition-all"
+            className="flex-1 min-w-0 bg-transparent outline-none font-mono text-[12px] text-foreground"
           />
         </div>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="py-1">
-          {filtered ? (
-            filtered.length === 0 ? (
-              <p className="text-foreground/20 text-[12px] px-4 py-6 text-center">
-                {t.common.noMatches}
-              </p>
-            ) : (
-              filtered.map((n) => (
-                <button
-                  key={n.id}
-                  onClick={() => onSelectPath(n.file_path ?? "", new Set([n.id]), n)}
-                  className="flex items-center gap-2 w-full text-left px-4 py-1.5 text-[11px] hover:bg-white/[0.03] transition-colors"
-                >
-                  <span className="w-[5px] h-[5px] rounded-full shrink-0" style={{ backgroundColor: n.color }} />
-                  <span className="text-foreground/60 truncate">{n.name}</span>
-                  <span className="text-foreground/15 ml-auto text-[10px] font-mono truncate max-w-[100px]">{n.file_path}</span>
-                </button>
-              ))
-            )
+      <div className="px-2 pb-4">
+        {filtered ? (
+          filtered.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground px-2 py-6 text-center">
+              {t.common.noMatches}
+            </p>
           ) : (
-            topLevel.map((c) => <TreeItem key={c.fullPath} dir={c} depth={0} onSelect={onSelectPath} selectedPath={selectedPath} />)
-          )}
-        </div>
-      </ScrollArea>
-
-      {selectedPath && (
-        <div className="px-3 py-2 border-t border-border/30">
-          <button
-            onClick={() => onSelectPath("", new Set())}
-            className="w-full px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] text-[11px] text-foreground/40 font-medium transition-all"
-          >
-            {t.graph.clearSelection}
-          </button>
-        </div>
-      )}
-    </div>
+            filtered.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => onSelectPath(n.file_path ?? "", new Set([n.id]), n)}
+                className="flex items-center gap-2 w-full h-7 px-2 rounded-md hover:bg-secondary"
+              >
+                <span
+                  className="w-[6px] h-[6px] shrink-0 rounded-full"
+                  style={{ backgroundColor: colorForLabel(n.label, theme) }}
+                />
+                <span className="font-mono text-[12px] text-secondary-foreground truncate">
+                  {n.name}
+                </span>
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground truncate max-w-[100px]">
+                  {n.file_path}
+                </span>
+              </button>
+            ))
+          )
+        ) : (
+          topLevel.map((c) => <TreeItem key={c.fullPath} dir={c} depth={0} onSelect={onSelectPath} selectedPath={selectedPath} />)
+        )}
+      </div>
+    </>
   );
 }

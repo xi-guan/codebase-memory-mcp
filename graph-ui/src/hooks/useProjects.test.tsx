@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useProjects } from "./useProjects";
+import { useProjectNames, useProjects } from "./useProjects";
 
 const callToolMock = vi.fn();
 vi.mock("../api/rpc", () => ({
@@ -9,47 +9,22 @@ vi.mock("../api/rpc", () => ({
 }));
 
 describe("useProjects machine-readable pagination", () => {
-  beforeEach(() => callToolMock.mockReset());
+  /* a returned function becomes a cleanup hook, so the mock must not be returned */
+  beforeEach(() => {
+    callToolMock.mockReset();
+  });
 
-  it("requests JSON and merges every project and schema page", async () => {
-    callToolMock.mockImplementation(async (name: string, args: Record<string, unknown>) => {
-      if (name === "list_projects") {
-        if (args.offset === 0) {
-          return {
-            projects: [{ name: "alpha", root_path: "/alpha", indexed_at: "now" }],
-            has_more: true,
-            next_offset: 1,
-          };
-        }
+  it("requests JSON with stats and merges every project page", async () => {
+    callToolMock.mockImplementation(async (_name: string, args: Record<string, unknown>) => {
+      if (args.offset === 0) {
         return {
-          projects: [{ name: "beta", root_path: "/beta", indexed_at: "now" }],
-          has_more: false,
-        };
-      }
-      if (name === "get_graph_schema" && args.project === "alpha") {
-        if (args.offset === 0) {
-          return {
-            node_labels: [{ label: "Function", count: 3 }],
-            edge_types: [],
-            total_nodes: 3,
-            total_edges: 2,
-            has_more: true,
-            next_offset: 1,
-          };
-        }
-        return {
-          node_labels: [],
-          edge_types: [{ type: "CALLS", count: 2 }],
-          total_nodes: 3,
-          total_edges: 2,
-          has_more: false,
+          projects: [{ name: "alpha", root_path: "/alpha", indexed_at: "now", nodes: 3 }],
+          has_more: true,
+          next_offset: 1,
         };
       }
       return {
-        node_labels: [{ label: "Class", count: 1 }],
-        edge_types: [],
-        total_nodes: 1,
-        total_edges: 0,
+        projects: [{ name: "beta", root_path: "/beta", indexed_at: "now", nodes: 1 }],
         has_more: false,
       };
     });
@@ -57,13 +32,8 @@ describe("useProjects machine-readable pagination", () => {
     const { result } = renderHook(() => useProjects());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.projects).toHaveLength(2);
-    expect(result.current.projects[0].schema?.node_labels).toEqual([
-      { label: "Function", count: 3 },
-    ]);
-    expect(result.current.projects[0].schema?.edge_types).toEqual([
-      { type: "CALLS", count: 2 },
-    ]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.projects.map((p) => p.name)).toEqual(["alpha", "beta"]);
     expect(callToolMock).toHaveBeenCalledWith("list_projects", {
       format: "json",
       detail: "stats",
@@ -76,11 +46,31 @@ describe("useProjects machine-readable pagination", () => {
       limit: 500,
       offset: 1,
     });
-    expect(callToolMock).toHaveBeenCalledWith("get_graph_schema", {
-      project: "alpha",
+    expect(callToolMock).not.toHaveBeenCalledWith("get_graph_schema", expect.anything());
+  });
+
+  it("reports a page without pagination fields as an error", async () => {
+    callToolMock.mockResolvedValue({ projects: [] });
+
+    const { result } = renderHook(() => useProjects());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.error).toBe("Invalid pagination response");
+  });
+
+  it("asks for names as JSON without stats", async () => {
+    callToolMock.mockResolvedValue({
+      projects: [{ name: "alpha", root_path: "/alpha", indexed_at: "now" }],
+      has_more: false,
+    });
+
+    const { result } = renderHook(() => useProjectNames());
+    await waitFor(() => expect(result.current).toHaveLength(1));
+
+    expect(callToolMock).toHaveBeenCalledWith("list_projects", {
       format: "json",
       limit: 500,
-      offset: 1,
+      offset: 0,
     });
   });
 });

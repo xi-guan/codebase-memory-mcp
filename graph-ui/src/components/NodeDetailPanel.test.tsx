@@ -57,7 +57,7 @@ describe("NodeDetailPanel code preview + deep-link", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Show code/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Show source/ }));
 
     const pre = await screen.findByText((content) => content.includes("const answer = 42;"), {
       selector: "pre",

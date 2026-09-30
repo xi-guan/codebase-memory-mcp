@@ -11,11 +11,13 @@
 #include "foundation/mem.h" // cbm_mem_init/budget (back-pressure futile-nap test)
 #include "pipeline/pipeline.h"
 #include "pipeline/pipeline_internal.h"
+#include "pipeline/lsp_surface.h"
 #include "pipeline/artifact.h"
 #include "store/store.h"
 #include "git/git_context.h"
 #include "foundation/dump_verify.h"
 #include "foundation/sha256.h"
+#include "foundation/sanitized.h" // CBM_SANITIZED (skips a wall-clock budget assertion)
 #include "foundation/compat_fs.h"
 #include "foundation/log.h"
 #include "foundation/win_utf8.h" // cbm_utf8_to_wide (Windows pipeline_test_set_mtime); no-op elsewhere
@@ -15120,8 +15122,62 @@ TEST(pipeline_objectscript_export_range_join_keeps_one_trailing_marker) {
 }
 #endif
 
+/* yyjson stores an object array as a linked list, so indexed access is O(idx)
+ * and an indexed decode loop is O(n^2). Rehydrate decodes one row per file on
+ * every incremental run: a 265k-def row spun a single core for the full 15-min
+ * quiet timeout in the field. The budget here is ~50x the linear cost. */
+TEST(pipeline_lsp_surface_decode_is_linear_in_def_count) {
+    enum { DEFS = 100000, BUDGET_MS = 5000, PER_DEF_CAP = 64 };
+    size_t cap = (size_t)DEFS * PER_DEF_CAP + 64;
+    char *json = (char *)malloc(cap);
+    ASSERT_NOT_NULL(json);
+    size_t len = (size_t)snprintf(json, cap, "{\"v\":1,\"lsp\":[");
+    for (int i = 0; i < DEFS; i++) {
+        len += (size_t)snprintf(json + len, cap - len,
+                                "%s{\"qn\":\"q%d\",\"sn\":\"s%d\",\"lb\":\"Function\"}",
+                                i ? "," : "", i, i);
+    }
+    len += (size_t)snprintf(json + len, cap - len, "]}");
+    ASSERT_TRUE(len < cap);
+
+    CBMArena arena;
+    cbm_arena_init(&arena);
+    CBMLSPDef *defs = NULL;
+    clock_t started = clock();
+    int count = cbm_lsp_surface_defs_from_json(&arena, json, &defs);
+    double elapsed_ms = 1000.0 * (double)(clock() - started) / (double)CLOCKS_PER_SEC;
+
+    /* copy out first, release, then assert: greatest's ASSERT_* macros return,
+     * so anything asserted ahead of the frees leaks the 6.4 MB buffer + arena */
+    bool shape_ok = (count == DEFS) && defs != NULL;
+    char first_qn[32] = "", last_qn[32] = "", last_sn[32] = "";
+    if (shape_ok) {
+        snprintf(first_qn, sizeof(first_qn), "%s", defs[0].qualified_name);
+        snprintf(last_qn, sizeof(last_qn), "%s", defs[DEFS - 1].qualified_name);
+        snprintf(last_sn, sizeof(last_sn), "%s", defs[DEFS - 1].short_name);
+    }
+    cbm_arena_destroy(&arena);
+    free(json);
+
+    ASSERT_EQ(count, DEFS);
+    ASSERT_TRUE(shape_ok);
+    /* order must survive the rewrite: registration consumes this array positionally */
+    ASSERT_STR_EQ(first_qn, "q0");
+    ASSERT_STR_EQ(last_qn, "q99999");
+    ASSERT_STR_EQ(last_sn, "s99999");
+#if !CBM_SANITIZED
+    /* instrumentation costs 5-20x per arena_strdup; the order assertions above
+     * are what pins the O(n) rewrite, so only wall-clock is dropped here */
+    ASSERT_TRUE(elapsed_ms < BUDGET_MS);
+#else
+    (void)elapsed_ms;
+#endif
+    PASS();
+}
+
 SUITE(pipeline) {
     RUN_TEST(pipeline_lsp_surface_persisted_and_body_edit_invariant);
+    RUN_TEST(pipeline_lsp_surface_decode_is_linear_in_def_count);
     /* Index lock */
     RUN_TEST(pipeline_lock_try_acquire);
     RUN_TEST(pipeline_lock_blocking);

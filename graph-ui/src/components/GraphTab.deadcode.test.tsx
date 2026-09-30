@@ -51,14 +51,14 @@ describe("GraphTab dead-code filters", () => {
     render(<GraphTab project="demo" />);
 
     /* Panel loaded; the dead-code section reports one dead node. */
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    expect(await screen.findByText("Node types")).toBeInTheDocument();
     expect(screen.getByText("1 dead")).toBeInTheDocument();
 
-    /* Both nodes visible initially — no "filtered from" notice. */
-    expect(screen.queryByText(/filtered from/)).not.toBeInTheDocument();
+    /* Both nodes visible initially — the status pill counts them. */
+    expect(await screen.findByText("2 nodes")).toBeInTheDocument();
 
     /* Toggling "Show only dead code" hides the non-dead node. */
-    fireEvent.click(screen.getByRole("button", { name: /Show only dead code/ }));
-    expect(await screen.findByText(/filtered from 2/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show only dead code" }));
+    expect(await screen.findByText("1 nodes")).toBeInTheDocument();
   });
 });

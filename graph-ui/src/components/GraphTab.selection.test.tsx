@@ -85,7 +85,9 @@ describe("GraphTab selection", () => {
     render(<GraphTab project="demo" />);
 
     /* Wait for the layout to load. */
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    /* wait on a node from the layout, not on the Sidebar's static heading: the
+     * heading is up as soon as the panel mounts, one render before the tree */
+    expect(await screen.findByRole("button", { name: /src/ })).toBeInTheDocument();
 
     /* Expand the "src" directory. */
     fireEvent.click(screen.getByRole("button", { name: /src/ }));
@@ -101,7 +103,9 @@ describe("GraphTab selection", () => {
     mockFetch(SELECTION_DATA);
     render(<GraphTab project="demo" />);
 
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    /* wait on a node from the layout, not on the Sidebar's static heading: the
+     * heading is up as soon as the panel mounts, one render before the tree */
+    expect(await screen.findByRole("button", { name: /src/ })).toBeInTheDocument();
 
     /* Click the "utils" directory — it contains exactly 1 node (helper),
      * but Sidebar passes no GraphNode arg for directories. */
@@ -118,10 +122,12 @@ describe("GraphTab selection", () => {
     mockFetch(SELECTION_DATA);
     render(<GraphTab project="demo" />);
 
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    /* wait on a node from the layout, not on the Sidebar's static heading: the
+     * heading is up as soon as the panel mounts, one render before the tree */
+    expect(await screen.findByRole("button", { name: /src/ })).toBeInTheDocument();
 
     /* Search for the orphan node. */
-    const searchInput = screen.getByPlaceholderText("Search...");
+    const searchInput = screen.getByPlaceholderText("Search loaded nodes");
     fireEvent.change(searchInput, { target: { value: "orphan" } });
 
     /* Click the search result — Sidebar passes "" for path (no file_path)
@@ -136,16 +142,18 @@ describe("GraphTab selection", () => {
     mockFetch(SELECTION_DATA);
     render(<GraphTab project="demo" />);
 
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    /* wait on a node from the layout, not on the Sidebar's static heading: the
+     * heading is up as soon as the panel mounts, one render before the tree */
+    expect(await screen.findByRole("button", { name: /src/ })).toBeInTheDocument();
 
     /* Select a leaf node first. */
     fireEvent.click(screen.getByRole("button", { name: /src/ }));
     fireEvent.click(screen.getByRole("button", { name: /^foo/ }));
     expect(screen.getByRole("heading", { name: "foo" })).toBeInTheDocument();
 
-    /* Click "Clear selection" — there are two buttons with this label
-     * (Sidebar footer + HUD). Both clear, so clicking either is fine. */
-    const clearButtons = screen.getAllByRole("button", { name: "Clear selection" });
+    /* Click "Clear selection". Matched loosely: the button also carries its
+     * "esc" shortcut hint, which belongs in the accessible name. */
+    const clearButtons = screen.getAllByRole("button", { name: /Clear selection/ });
     fireEvent.click(clearButtons[0]);
 
     /* Detail panel must disappear. */
@@ -156,13 +164,16 @@ describe("GraphTab selection", () => {
     mockFetch(SELECTION_DATA);
     render(<GraphTab project="demo" />);
 
-    expect(await screen.findByText("Filters")).toBeInTheDocument();
+    /* wait on a node from the layout, not on the Sidebar's static heading: the
+     * heading is up as soon as the panel mounts, one render before the tree */
+    expect(await screen.findByRole("button", { name: /src/ })).toBeInTheDocument();
 
     /* Select foo (id:1), which has edges to bar (id:2) and helper (id:3). */
     fireEvent.click(screen.getByRole("button", { name: /src/ }));
     fireEvent.click(screen.getByRole("button", { name: /^foo/ }));
 
-    /* foo + bar + helper = 3 nodes highlighted. */
-    expect(screen.getByText("3 selected")).toBeInTheDocument();
+    /* foo + bar + helper = 3 nodes highlighted. A node selection has a focus,
+     * so the pill spells the split out; the directory case above has none. */
+    expect(screen.getByText("3 selected · 1 focus + 2 neighbours")).toBeInTheDocument();
   });
 });

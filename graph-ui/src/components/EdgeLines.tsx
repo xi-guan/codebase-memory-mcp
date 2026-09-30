@@ -1,14 +1,27 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import type { GraphNode, GraphEdge } from "../lib/types";
+import type { Theme } from "../hooks/useTheme";
+import {
+  EDGE_IDLE,
+  EDGE_INCOMING,
+  EDGE_OUTGOING,
+  GL_ALPHA,
+  themed,
+  themedAlpha,
+} from "../lib/colors";
 import { edgeIntensityScale } from "../lib/density";
 
 interface EdgeLinesProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
   highlightedIds: Set<number> | null;
+  /* Direction is read against this node: away from it takes the accent hue,
+   * toward it the counter-hue. */
+  focusId?: number | null;
+  theme: Theme;
   opacity?: number;
-  /* User edge-brightness multiplier (see DisplaySettings). Layered on top of
+  /* User edge-brightness multiplier (see DisplaySettings), layered on top of
    * the automatic density scale. */
   brightness?: number;
   /* When set, edge.target is looked up in this array instead of `nodes`.
@@ -17,48 +30,18 @@ interface EdgeLinesProps {
   targetNodes?: GraphNode[];
 }
 
-function getClusterKey(fp?: string): string {
-  if (!fp) return "";
-  const parts = fp.split("/");
-  return parts.slice(0, Math.min(2, parts.length)).join("/");
-}
-
-/* Edge type → color (matches the filter panel) */
-const EDGE_TYPE_COLORS: Record<string, string> = {
-  CALLS: "#1DA27E",
-  IMPORTS: "#3b82f6",
-  DEFINES: "#a855f7",
-  DEFINES_METHOD: "#a855f7",
-  CONTAINS_FILE: "#22c55e",
-  CONTAINS_FOLDER: "#22c55e",
-  CONTAINS_PACKAGE: "#22c55e",
-  HANDLES: "#eab308",
-  IMPLEMENTS: "#f97316",
-  HTTP_CALLS: "#e11d48",
-  ASYNC_CALLS: "#ec4899",
-  GRPC_CALLS: "#f59e0b",
-  GRAPHQL_CALLS: "#e879f9",
-  TRPC_CALLS: "#a78bfa",
-  CROSS_HTTP_CALLS: "#fb923c",
-  CROSS_ASYNC_CALLS: "#fb7185",
-  CROSS_GRPC_CALLS: "#fbbf24",
-  CROSS_GRAPHQL_CALLS: "#f0abfc",
-  CROSS_TRPC_CALLS: "#c4b5fd",
-  CROSS_CHANNEL: "#fdba74",
-  MEMBER_OF: "#64748b",
-  TESTS_FILE: "#06b6d4",
-};
-
-const DEFAULT_EDGE_COLOR = "#1C8585";
-
 export function EdgeLines({
   nodes,
   edges,
   highlightedIds,
+  focusId = null,
+  theme,
   opacity = 1.0,
   brightness = 1.0,
   targetNodes,
 }: EdgeLinesProps) {
+  const dark = theme === "dark";
+
   const geometry = useMemo(() => {
     /* Shrink per-edge glow as the edge count grows so the additively-blended
      * center doesn't saturate to white; the user multiplier rides on top. */
@@ -75,9 +58,19 @@ export function EdgeLines({
       }
     }
 
+    const idle = new THREE.Color(themed(EDGE_IDLE, theme));
+    const outgoing = new THREE.Color(themed(EDGE_OUTGOING, theme));
+    const incoming = new THREE.Color(themed(EDGE_INCOMING, theme));
+    const idleAlpha = themedAlpha(GL_ALPHA.edgeIdle, theme);
+    const outAlpha = themedAlpha(GL_ALPHA.edgeOutgoing, theme);
+    const inAlpha = themedAlpha(GL_ALPHA.edgeIncoming, theme);
+    const dimAlpha = themedAlpha(GL_ALPHA.dimmed, theme);
+
     const hasHighlight = highlightedIds && highlightedIds.size > 0;
     const positions = new Float32Array(edges.length * 6);
-    const colors = new Float32Array(edges.length * 6);
+    /* Four components so the alpha rides per-vertex: light blends normally
+     * (additive would wash a pale ground to white) and needs real alpha. */
+    const colors = new Float32Array(edges.length * 8);
     let validCount = 0;
 
     for (const edge of edges) {
@@ -92,38 +85,36 @@ export function EdgeLines({
       const tHL = !hasHighlight || highlightedIds.has(t.id);
       if (hasHighlight && !sHL && !tHL) continue;
 
-      const sameCluster =
-        getClusterKey(s.file_path) === getClusterKey(t.file_path);
-
-      /* Intensity based on cluster membership and highlight.
-       * With additive blending + dark background, these glow nicely. */
-      let intensity = sameCluster ? 0.25 : 0.06;
-      if (hasHighlight) {
-        /* A selection stays at full strength (never density-scaled) so it
-         * pops against the dimmed rest; only the un-selected bulk is scaled. */
-        intensity = sHL && tHL ? 0.5 : 0.04 * densityScale;
-      } else {
-        intensity *= densityScale;
+      let color = idle;
+      let alpha = idleAlpha * densityScale;
+      if (focusId !== null && edge.source === focusId) {
+        color = outgoing;
+        alpha = outAlpha;
+      } else if (focusId !== null && edge.target === focusId) {
+        color = incoming;
+        alpha = inAlpha;
+      } else if (hasHighlight) {
+        /* Neither end is the focus: part of the dimmed rest. */
+        alpha = sHL && tHL ? idleAlpha : idleAlpha * dimAlpha * densityScale;
       }
 
-      const off = validCount * 6;
-      positions[off] = s.x;
-      positions[off + 1] = s.y;
-      positions[off + 2] = s.z;
-      positions[off + 3] = t.x;
-      positions[off + 4] = t.y;
-      positions[off + 5] = t.z;
+      const p = validCount * 6;
+      positions[p] = s.x;
+      positions[p + 1] = s.y;
+      positions[p + 2] = s.z;
+      positions[p + 3] = t.x;
+      positions[p + 4] = t.y;
+      positions[p + 5] = t.z;
 
-      /* Color from edge TYPE (correlates with edge type filter) */
-      const edgeColor = new THREE.Color(
-        EDGE_TYPE_COLORS[edge.type] ?? DEFAULT_EDGE_COLOR,
-      );
-      colors[off] = edgeColor.r * intensity;
-      colors[off + 1] = edgeColor.g * intensity;
-      colors[off + 2] = edgeColor.b * intensity;
-      colors[off + 3] = edgeColor.r * intensity;
-      colors[off + 4] = edgeColor.g * intensity;
-      colors[off + 5] = edgeColor.b * intensity;
+      /* Dark blends additively, so the intensity rides in the RGB and the
+       * alpha stays at 1; light carries it in the alpha instead. */
+      const r = dark ? color.r * alpha : color.r;
+      const g = dark ? color.g * alpha : color.g;
+      const b = dark ? color.b * alpha : color.b;
+      const a = dark ? 1 : alpha;
+      const c = validCount * 8;
+      colors[c] = r; colors[c + 1] = g; colors[c + 2] = b; colors[c + 3] = a;
+      colors[c + 4] = r; colors[c + 5] = g; colors[c + 6] = b; colors[c + 7] = a;
       validCount++;
     }
 
@@ -134,10 +125,10 @@ export function EdgeLines({
     );
     geo.setAttribute(
       "color",
-      new THREE.BufferAttribute(colors.slice(0, validCount * 6), 3),
+      new THREE.BufferAttribute(colors.slice(0, validCount * 8), 4),
     );
     return geo;
-  }, [nodes, edges, highlightedIds, targetNodes, brightness]);
+  }, [nodes, edges, highlightedIds, focusId, targetNodes, brightness, theme, dark]);
 
   return (
     <lineSegments geometry={geometry}>
@@ -145,7 +136,7 @@ export function EdgeLines({
         vertexColors
         transparent
         opacity={opacity}
-        blending={THREE.AdditiveBlending}
+        blending={dark ? THREE.AdditiveBlending : THREE.NormalBlending}
         depthWrite={false}
         toneMapped={false}
       />
