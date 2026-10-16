@@ -1,0 +1,22 @@
+/*
+ * light values for the --atlas-* roles in tokens.css; dark stays the default.
+ * kept in its own file so upstream edits to tokens.css never conflict with it.
+ */
+
+:root[data-theme="light"] {
+    --atlas-bg: #f1f4f4;
+    --atlas-panel: #fafbfb;
+    --atlas-panel-raised: #ffffff;
+    --atlas-line: #d2dcdd;
+
+    --atlas-phosphor: #1a5fb4;
+    --atlas-phosphor-mute: #5b7fb5;
+
+    --atlas-dim: #57696d;
+    --atlas-fg: #0c1417;
+    --atlas-cyan: #0e7490;
+    --atlas-alarm: #b32424;
+    --atlas-select: #e1eaf6;
+
+    color-scheme: light;
+}

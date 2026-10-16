@@ -38,6 +38,7 @@ import Splitter from '../layout/Splitter';
 import { availableWorkspaces, workspaceStrings } from './workspace-strings';
 import type { Workspace, Guidance } from './workspace-strings';
 import './agent-status.css';
+import ThemeToggle from './ThemeToggle';
 
 /** Ein Menuepunkt: sein Buchstaben-Kuerzel und der Rest des Wortes. */
 export interface MenuItem {
@@ -662,6 +663,7 @@ export default function AtlasChrome(props: AtlasChromeProps): JSX.Element {
                         <ChipView key={chip.label} chip={chip} />
                     ))}
                 </div>
+                <ThemeToggle />
                 {props.projectSwitcher}
                 {(props.onOpenBrowserAi !== undefined || props.onToggleBrowserAi !== undefined) && <div className="atlas-agent-controls" role="group" aria-label={workspaceStrings.agentControls}>
                     {props.onOpenBrowserAi !== undefined && <button type="button" className="atlas-browser-ai-action" data-state={props.agentState ?? 'off'}

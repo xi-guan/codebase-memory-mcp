@@ -6,6 +6,7 @@ import { installUiLog } from './app/ui-log-install';
 // Kosmetik: eine Regel, die eine noch nicht definierte Variable liest, faellt
 // still auf ihren Initialwert zurueck.
 import './styles/tokens.css';
+import './styles/theme-light.css';
 import './styles/terminal.css';
 import './styles/workspace.css';
 

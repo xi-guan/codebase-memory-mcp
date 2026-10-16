@@ -1,0 +1,25 @@
+.atlas-theme-toggle {
+    display: inline-flex;
+    align-items: stretch;
+    flex-shrink: 0;
+    border: 1px solid var(--atlas-line);
+    border-radius: 5px;
+}
+
+.atlas-theme-toggle button {
+    display: grid;
+    place-items: center;
+    min-width: 30px;
+    padding: 6px 7px;
+    border: 0;
+    background: transparent;
+    color: var(--atlas-dim);
+    cursor: pointer;
+}
+
+.atlas-theme-toggle button + button { border-left: 1px solid var(--atlas-line); }
+.atlas-theme-toggle button:first-child { border-radius: 5px 0 0 5px; }
+.atlas-theme-toggle button:last-child { border-radius: 0 5px 5px 0; }
+.atlas-theme-toggle button:hover { background: var(--atlas-select); color: var(--atlas-fg); }
+.atlas-theme-toggle button[aria-pressed="true"] { background: var(--atlas-select); color: var(--atlas-phosphor); }
+.atlas-theme-toggle button:focus-visible { outline: 2px solid var(--atlas-phosphor); outline-offset: 2px; }
