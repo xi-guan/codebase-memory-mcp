@@ -138,6 +138,7 @@ import { FRAME_MIN_DISTANCE, containShift, fitCamera, flatBounds, frameDistance,
 import type { CameraFit, FrameBox } from './camera-frame';
 import { FRAME_WINDOW_MS, recordFrameWindow, recordSceneFacts } from './frame-rate';
 import { springStep } from '../agents/agent-motion';
+import { useTheme } from '../app/theme';
 import type { GraphData, GraphNode } from './types';
 import { COVERAGE_SHADOW_COLOR, coverageShadowPositions, resolveCoverageShadowNode } from './coverage-shadow';
 import { HOVER_LAYER_STYLE, HoverLayerContext } from './hover-layer';
@@ -1099,8 +1100,10 @@ export function GraphScene({
     const labelMaxDistance = labelDistanceFactor > 0 ? labelDistanceFactor * sceneRadius : 0;
 
     const nodeBoost = nodeBoostScale(data.nodes.length) * display.nodeGlow;
+    // the light theme inverts the canvas, where bloom would turn into grey smudges
+    const bloomOff = useTheme() === 'light';
     const bloomIntensity =
-        BASE_BLOOM_INTENSITY * bloomIntensityScale(data.nodes.length) * display.bloom;
+        BASE_BLOOM_INTENSITY * bloomIntensityScale(data.nodes.length) * display.bloom * (bloomOff ? 0 : 1);
 
     /*
      * Der Renderloop, in drei Lagen.

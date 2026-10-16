@@ -103,5 +103,7 @@ export default defineConfig({
     // Render-Tests schalten per Docblock auf jsdom um.
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'tools/**/*.test.mjs'],
+    // the light palette parses tokens.css?raw at runtime; vitest would blank it like any stylesheet
+    css: { include: [/\.css\?raw$/] },
   },
 });

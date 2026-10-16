@@ -39,6 +39,8 @@
 import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/languages/definitions/register.all';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
+import { readTheme, subscribeTheme } from '../app/theme';
+import { lightTheme } from './monaco-light';
 
 /** Der Name des Themes, das aus den Tokens gebaut ist. */
 export const ATLAS_THEME = 'atlas-phosphor';
@@ -54,7 +56,7 @@ let prepared = false;
  * mitwandert.
  */
 function defineTheme(): void {
-    monaco.editor.defineTheme(ATLAS_THEME, {
+    const theme: monaco.editor.IStandaloneThemeData = {
         base: 'vs-dark',
         inherit: true,
         rules: [
@@ -91,7 +93,8 @@ function defineTheme(): void {
             'scrollbarSlider.activeBackground': '#1f7f4ccc',
             'editorOverviewRuler.border': '#0a0e0d',
         },
-    });
+    };
+    monaco.editor.defineTheme(ATLAS_THEME, readTheme() === 'light' ? lightTheme(theme) : theme);
 }
 
 /**
@@ -112,6 +115,7 @@ export function prepareMonaco(): typeof monaco {
         getWorker: () => new EditorWorker(),
     };
     defineTheme();
+    subscribeTheme(() => { defineTheme(); monaco.editor.setTheme(ATLAS_THEME); });
     prepared = true;
     return monaco;
 }

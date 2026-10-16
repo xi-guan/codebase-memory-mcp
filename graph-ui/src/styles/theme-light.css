@@ -1,7 +1,4 @@
-/*
- * light values for the --atlas-* roles in tokens.css; dark stays the default.
- * kept in its own file so upstream edits to tokens.css never conflict with it.
- */
+/* light values for the --atlas-* roles; its own file so upstream edits to tokens.css never conflict */
 
 :root[data-theme="light"] {
     --atlas-bg: #f1f4f2;
@@ -19,4 +16,14 @@
     --atlas-select: #dcefe5;
 
     color-scheme: light;
+}
+
+/* the 3D scenes glow additively on black; inverted, the glow reads as ink and keeps its hue */
+:root[data-theme="light"] canvas[data-engine^="three.js"] {
+    filter: invert(1) hue-rotate(180deg);
+}
+
+/* the Galaxy wrapper paints black inline until the first frame lands */
+:root[data-theme="light"] .atlas-galaxy-scene > div {
+    background: transparent !important;
 }

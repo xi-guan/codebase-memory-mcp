@@ -31,7 +31,8 @@ export function setTheme(theme: Theme): void {
     apply(theme);
 }
 
-function subscribe(listener: () => void): () => void {
+/** For code outside React, such as Monaco, that has to repaint when the theme flips. */
+export function subscribeTheme(listener: () => void): () => void {
     const query = typeof window.matchMedia === 'function' ? window.matchMedia(LIGHT_QUERY) : null;
     // follow the OS only until the user picks a theme explicitly
     const followSystem = (event: MediaQueryListEvent) => { if (storedTheme() === null) apply(event.matches ? 'light' : 'dark'); };
@@ -44,5 +45,5 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useTheme(): Theme {
-    return useSyncExternalStore(subscribe, readTheme, () => 'dark');
+    return useSyncExternalStore(subscribeTheme, readTheme, () => 'dark');
 }

@@ -15,6 +15,7 @@ import {
 import { useArchitectureHistory } from './use-architecture-history';
 import './architecture.css';
 import { scenePaletteStyle } from './scene-palette';
+import { lightDarkStyle } from '../styles/light-dark';
 import type { RepositoryMapProps } from './RepositoryMap';
 import SpatialArchitecture from './SpatialArchitecture';
 import RoutesArchitecture from './RoutesArchitecture';
@@ -120,7 +121,7 @@ function Findings({ view, data, empty, onNavigate }: {
     </section>;
 }
 
-const paletteStyle = scenePaletteStyle();
+const paletteStyle = lightDarkStyle(scenePaletteStyle());
 
 /** Compact exploration history beside the current scope. Tooltips name each destination. */
 function HistoryControls({ history, place, onGo, onJump }: {
