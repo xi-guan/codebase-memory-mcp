@@ -4,19 +4,19 @@
  */
 
 :root[data-theme="light"] {
-    --atlas-bg: #f1f4f4;
-    --atlas-panel: #fafbfb;
+    --atlas-bg: #f1f4f2;
+    --atlas-panel: #fafbfa;
     --atlas-panel-raised: #ffffff;
-    --atlas-line: #d2dcdd;
+    --atlas-line: #d0dcd5;
 
-    --atlas-phosphor: #1a5fb4;
-    --atlas-phosphor-mute: #5b7fb5;
+    --atlas-phosphor: #0b7a47;
+    --atlas-phosphor-mute: #4f8a6c;
 
-    --atlas-dim: #57696d;
-    --atlas-fg: #0c1417;
+    --atlas-dim: #556a5f;
+    --atlas-fg: #0d1712;
     --atlas-cyan: #0e7490;
-    --atlas-alarm: #b32424;
-    --atlas-select: #e1eaf6;
+    --atlas-alarm: #b32447;
+    --atlas-select: #dcefe5;
 
     color-scheme: light;
 }

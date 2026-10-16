@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { defineConfig, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import { licenseBuildInventory } from './tools/license-build-inventory';
+import { lightThemeCss } from './tools/light-theme-css';
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 const licenseInventory = licenseBuildInventory(projectRoot);
@@ -80,6 +81,7 @@ export default defineConfig({
   define: {
     __ATLAS_VERSION__: JSON.stringify(atlasVersion()),
   },
+  css: { postcss: { plugins: [lightThemeCss(projectRoot)] } },
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
