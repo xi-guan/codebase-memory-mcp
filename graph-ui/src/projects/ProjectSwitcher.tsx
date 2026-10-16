@@ -4,6 +4,7 @@ import type { ProjectEntry } from '../provider/rpc-schemas';
 import { projectSwitcherStrings as text } from './project-switcher-strings';
 import { projectPickerPlacement } from './project-picker-placement';
 import { RefreshControl, useRefreshFeedback } from '../ui/refresh/refresh-feedback';
+import { RECENT_KEEP, recentProjects, recordRecentProject } from './recent-projects';
 import './project-switcher.css';
 
 interface ProjectSwitcherProps {
@@ -64,6 +65,8 @@ export default function ProjectSwitcher(props: ProjectSwitcherProps): JSX.Elemen
         return () => { current = false; };
     }, [open, props.listProjects, revision]);
 
+    useEffect(() => recordRecentProject(props.currentProject), [props.currentProject]);
+
     useEffect(() => {
         if (!open) return;
         const outside = (event: PointerEvent): void => {
@@ -82,9 +85,12 @@ export default function ProjectSwitcher(props: ProjectSwitcherProps): JSX.Elemen
     const refresh = useRefreshFeedback({ key: String(reads), settled: status !== 'loading',
         value: entries.map(entry => [entry.name, entry.root_path]), error: status === 'error' ? '' : undefined });
 
+    const recent = recentProjects();
+    const recency = (name: string) => (recent.includes(name) ? recent.indexOf(name) : RECENT_KEEP);
     const projects = Array.from(new Map(entries.map(entry => [entry.name, entry])).values())
         .filter(entry => entry.name.length > 0)
         .sort((left, right) => Number(right.name === props.currentProject) - Number(left.name === props.currentProject)
+            || recency(left.name) - recency(right.name)
             || left.name.localeCompare(right.name));
 
     return <details ref={disclosure} open={open} className="atlas-project-switcher"
