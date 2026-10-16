@@ -82,7 +82,7 @@ describe('die Werkzeuge, die von sich aus JSON liefern', () => {
         const result = await c.listProjects();
         expect(result.projects).toHaveLength(501);
         expect(result.projects.at(-1)?.name).toBe('project-500');
-        expect(rpc.calls.map(call => call.args)).toEqual([{ limit: 500, offset: 0, format: 'json' }, { limit: 500, offset: 500, format: 'json' }]);
+        expect(rpc.calls.map(call => call.args)).toEqual([{ limit: 500, offset: 0, metadata_only: true, format: 'json' }, { limit: 500, offset: 500, metadata_only: true, format: 'json' }]);
     });
 
     it.each([

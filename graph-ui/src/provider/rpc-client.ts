@@ -258,7 +258,8 @@ export class RpcIntelligenceClient {
         let offset = 0;
         let total: number | undefined;
         for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
-            const raw = await this.json('list_projects', { limit: 500, offset });
+            // without metadata_only the server runs git twice per project for a branch the UI never shows
+            const raw = await this.json('list_projects', { limit: 500, offset, metadata_only: true });
             let page: ListProjectsResult;
             try { page = readListProjects(raw); }
             catch (error) { throw asParseFailure('list_projects', error); }
