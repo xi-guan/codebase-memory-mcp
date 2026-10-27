@@ -426,8 +426,12 @@ static int semantic_manifest_walk_controls(semantic_manifest_builder_t *builder,
     if (depth >= MANIFEST_WALK_MAX_DEPTH)
         return 0;
     cbm_dir_t *dir = cbm_opendir(abs_dir);
-    if (!dir)
-        return CBM_NOT_FOUND;
+    if (!dir) {
+        /* A nested directory we can't open has no control files to
+         * contribute; skip it like discover.c's walk_dir already does.
+         * The root call (depth 0) still fails closed. */
+        return depth == 0 ? CBM_NOT_FOUND : 0;
+    }
     int rc = 0;
     cbm_dirent_t *entry;
     while (rc == 0 && (entry = cbm_readdir(dir)) != NULL) {
@@ -1327,7 +1331,10 @@ static bool incr_label_is_registry_symbol(const char *label) {
 /* Callback for cbm_gbuf_foreach_node: seed the registry with the existing
  * project's definition symbols so the resolver can match cross-file symbols
  * during incremental. Mirrors the full-index registry contents exactly so an
- * incremental re-resolve picks the same nodes a full reindex would. */
+ * incremental re-resolve picks the same nodes a full reindex would -- including
+ * a Python function's locals, which cbm_registry_add_lang keeps out of the
+ * short-name index there too (nodes load ORDER BY id and a file's defs are
+ * inserted parent first, so the enclosing function is seeded before its locals). */
 /* Each symbol is seeded with its file's DETECTED language, exactly what the
  * full index recorded (pass_definitions.c / pass_parallel.c), so the cross-
  * language veto judges an incremental re-resolve the same way. Stored nodes carry no
@@ -1337,6 +1344,7 @@ static bool incr_label_is_registry_symbol(const char *label) {
 typedef struct {
     cbm_registry_t *registry;
     CBMHashTable *lang_by_path; /* rel_path -> (CBMLanguage + 1); keys borrowed */
+    const char *project;        /* bounds Python function-local detection per file */
 } registry_seed_t;
 
 static void registry_visitor(const cbm_gbuf_node_t *node, void *userdata) {
@@ -1351,14 +1359,20 @@ static void registry_visitor(const cbm_gbuf_node_t *node, void *userdata) {
             lang = (CBMLanguage)((uintptr_t)v - SKIP_ONE);
         }
     }
-    cbm_registry_add_lang(seed->registry, node->name, node->qualified_name, node->label, lang);
+    /* Same per-file bound as the full index (pass_definitions.c). */
+    size_t prefix_len = lang == CBM_LANG_PYTHON
+                            ? cbm_pipeline_fqn_symbol_prefix_len(seed->project, node->file_path)
+                            : 0;
+    cbm_registry_add_lang_in_module(seed->registry, node->name, node->qualified_name, node->label,
+                                    lang, prefix_len);
 }
 
 /* Seed the registry from every registry symbol in the graph buffer, with
  * languages taken from the discovered files (see registry_visitor). */
 static void registry_seed_from_gbuf(cbm_registry_t *registry, const cbm_gbuf_t *gbuf,
-                                    const cbm_file_info_t *files, int file_count) {
-    registry_seed_t seed = {.registry = registry, .lang_by_path = NULL};
+                                    const char *project, const cbm_file_info_t *files,
+                                    int file_count) {
+    registry_seed_t seed = {.registry = registry, .lang_by_path = NULL, .project = project};
     if (files && file_count > 0) {
         seed.lang_by_path = cbm_ht_create((size_t)file_count * PAIR_LEN);
     }
@@ -2302,6 +2316,8 @@ static int closure_probe_surfaces(cbm_pipeline_t *p, const char *project,
      * leaked one map per probed run (LSan, macOS CI). */
     cbm_pkgmap_free(cbm_pipeline_get_pkgmap());
     cbm_pipeline_set_pkgmap(NULL);
+    cbm_pipeline_namespace_map_free(cbm_pipeline_get_nsmap());
+    cbm_pipeline_set_nsmap(NULL);
     cbm_path_alias_collection_free(aliases);
     cbm_gbuf_free(probe_gbuf);
     return rc;
@@ -2456,6 +2472,63 @@ static bool closure_dir_has_compose(const char *repo_path, const char *rel, cons
     return found;
 }
 
+/* The nearest directory at or above `rel`'s that holds a Chart.yaml, or is a
+ * werf `.helm` chart, into out ("" for the repository root); false when none
+ * is. */
+static bool closure_chart_dir_of(const char *repo_path, const char *rel, char *out, size_t sz) {
+    snprintf(out, sz, "%s", rel);
+    char *cut = strrchr(out, '/');
+    for (;;) {
+        if (cut) {
+            *cut = '\0';
+        } else {
+            out[0] = '\0';
+        }
+        static const char *const names[] = {"Chart.yaml", "Chart.yml"};
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            char path[CBM_SZ_4K];
+            snprintf(path, sizeof(path), "%s/%s%s%s", repo_path, out, out[0] ? "/" : "", names[i]);
+            if (cbm_file_exists(path)) {
+                return true;
+            }
+        }
+        if (out[0] && cbm_werf_helm_dir(repo_path, out)) {
+            return true;
+        }
+        if (!out[0]) {
+            return false;
+        }
+        cut = strrchr(out, '/');
+    }
+}
+
+/* Is `rel` a file a release reads as values (an IMPORTS {local_name:
+ * valuesFile | values} edge reaches its node)? */
+static bool closure_release_values(cbm_store_t *store, const char *project, const char *rel) {
+    cbm_node_t *nodes = NULL;
+    int count = 0;
+    if (cbm_store_find_nodes_by_file(store, project, rel, &nodes, &count) != CBM_STORE_OK) {
+        return false;
+    }
+    bool hit = false;
+    for (int i = 0; i < count && !hit; i++) {
+        cbm_edge_t *edges = NULL;
+        int ne = 0;
+        if (cbm_store_find_edges_by_target_type(store, nodes[i].id, "IMPORTS", &edges, &ne) !=
+            CBM_STORE_OK) {
+            continue;
+        }
+        for (int j = 0; j < ne && !hit; j++) {
+            const char *p = edges[j].properties_json;
+            hit = p && (strstr(p, "\"local_name\":\"valuesFile\"") ||
+                        strstr(p, "\"local_name\":\"values\""));
+        }
+        cbm_store_free_edges(edges, ne);
+    }
+    cbm_store_free_nodes(nodes, count);
+    return hit;
+}
+
 /* Kubernetes inputs reach past their own file (pass_k8s.c): a kustomization
  * decides which manifests deploy together and in which namespace, a
  * Chart.yaml links other charts, and a manifest's Services select workloads
@@ -2472,11 +2545,33 @@ static const char *closure_k8s_decline(cbm_store_t *store, const char *project,
         if (cbm_is_kustomize_file(base) || strcmp(base, "Kustomization") == 0) {
             return "k8s_bundle_input_changed";
         }
-        if (strcmp(base, "Chart.yaml") == 0 || strcmp(base, "Chart.yml") == 0) {
+        /* A werf.yaml names the chart of the `.helm` dir beside it. */
+        if (strcmp(base, "Chart.yaml") == 0 || strcmp(base, "Chart.yml") == 0 ||
+            strcmp(base, "werf.yaml") == 0 || strcmp(base, "werf.yml") == 0) {
             return "helm_chart_changed";
+        }
+        /* A chart's values file CONFIGURES it and its templates/ are what it
+         * DEPLOYS: edges the K8s pass draws from the chart directory, which a
+         * repair of this file alone does not hold. */
+        char chart[CBM_SZ_4K];
+        if (closure_chart_dir_of(repo_path, rel, chart, sizeof(chart))) {
+            size_t cl = strlen(chart);
+            const char *in_chart = rel + (cl ? cl + SKIP_ONE : 0);
+            if (cbm_helm_values_name(in_chart)) {
+                return "helm_values_changed";
+            }
+            if (strncmp(in_chart, "templates/", strlen("templates/")) == 0) {
+                return "helm_template_changed";
+            }
         }
         if (strcmp(base, ".env") == 0 && closure_dir_has_compose(repo_path, rel, base)) {
             return "compose_env_changed";
+        }
+        /* A release's values file -- a kustomization's valuesFile, a Terraform
+         * helm_release's file(...) -- feeds the images the release renders,
+         * which a repair of the values file alone does not redraw. */
+        if (closure_release_values(store, project, rel)) {
+            return "helm_release_values_changed";
         }
         cbm_node_t *nodes = NULL;
         int count = 0;
@@ -3262,7 +3357,7 @@ static int run_closure_delta(cbm_pipeline_t *p, const char *db_path, const char 
     if (!registry) {
         goto out;
     }
-    registry_seed_from_gbuf(registry, gbuf, files, file_count);
+    registry_seed_from_gbuf(registry, gbuf, project, files, file_count);
     cbm_log_info("delta.preseed_done", "registry", itoa_buf(cbm_registry_size(registry)),
                  "elapsed_ms", itoa_buf((int)elapsed_ms(t)));
 
@@ -3448,6 +3543,8 @@ static int run_closure_delta(cbm_pipeline_t *p, const char *db_path, const char 
     }
     cbm_pkgmap_free(cbm_pipeline_get_pkgmap());
     cbm_pipeline_set_pkgmap(NULL);
+    cbm_pipeline_namespace_map_free(cbm_pipeline_get_nsmap());
+    cbm_pipeline_set_nsmap(NULL);
     if (phase_rc != 0) {
         cbm_log_error("delta.err", "phase", "extract_resolve", "rc", itoa_buf(phase_rc));
         if (phase_rc == CBM_PIPELINE_ABORT_PRESERVE_DB) {
@@ -4112,7 +4209,7 @@ int cbm_pipeline_run_incremental(cbm_pipeline_t *p, const char *db_path, cbm_fil
     /* Step 3-5: Registry + extract + resolve */
     cbm_registry_t *registry = cbm_registry_new();
     cbm_clock_gettime(CLOCK_MONOTONIC, &t);
-    registry_seed_from_gbuf(registry, existing, files, file_count);
+    registry_seed_from_gbuf(registry, existing, project, files, file_count);
     cbm_log_info("incremental.registry_seed", "symbols", itoa_buf(cbm_registry_size(registry)),
                  "elapsed_ms", itoa_buf((int)elapsed_ms(t)));
 
@@ -4204,6 +4301,8 @@ int cbm_pipeline_run_incremental(cbm_pipeline_t *p, const char *db_path, cbm_fil
      * full pipeline's ownership boundary on both success and failure. */
     cbm_pkgmap_free(cbm_pipeline_get_pkgmap());
     cbm_pipeline_set_pkgmap(NULL);
+    cbm_pipeline_namespace_map_free(cbm_pipeline_get_nsmap());
+    cbm_pipeline_set_nsmap(NULL);
 
     if (phase_rc != 0) {
         cbm_log_error("incremental.err", "phase", "extract_resolve", "rc", itoa_buf(phase_rc));
